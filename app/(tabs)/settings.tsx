@@ -94,11 +94,14 @@ export default function SettingsScreen() {
     }
   }, [user?.display_name, user?.username, (user as any)?.profile_bio, (user as any)?.profile_location, (user as any)?.profile_links]);
 
-  // Load notification preferences from user object
+  // Track initial preferences to detect changes and prevent reversion
+  const [initialNotificationPrefs, setInitialNotificationPrefs] = useState<NotificationPreferences | null>(null);
+
+  // Load notification preferences from user object (only when user changes and we don't have initial prefs)
   useEffect(() => {
-    if (user) {
+    if (user && !initialNotificationPrefs) {
       const raw = (user as any)?.notification_preferences ?? {};
-      setNotificationPreferences({
+      const loadedPrefs = {
         email: {
           top_up: typeof raw?.email?.['top_up.completed'] === 'boolean' ? raw.email['top_up.completed'] : true,
           wallet_transfer: typeof raw?.email?.['wallet.transfer'] === 'boolean' ? raw.email['wallet.transfer'] : true,
@@ -109,9 +112,12 @@ export default function SettingsScreen() {
           wallet_transfer: typeof raw?.in_app?.['wallet.transfer'] === 'boolean' ? raw.in_app['wallet.transfer'] : true,
           reward: typeof raw?.in_app?.['reward.awarded'] === 'boolean' ? raw.in_app['reward.awarded'] : true,
         },
-      });
+      };
+      setNotificationPreferences(loadedPrefs);
+      setInitialNotificationPrefs(loadedPrefs);
+      setNotificationPrefsDirty(false);
     }
-  }, [user]);
+  }, [user, initialNotificationPrefs]);
 
   // Username validation
   useEffect(() => {
@@ -347,22 +353,18 @@ export default function SettingsScreen() {
   const handleSaveNotificationPreferences = async () => {
     setIsSavingNotificationPrefs(true);
     try {
-      const typeMap = {
-        top_up: 'top_up.completed',
-        wallet_transfer: 'wallet.transfer',
-        reward: 'reward.awarded',
-      };
-
+      // Backend expects simple keys (top_up, wallet_transfer, reward)
+      // It will map them internally to dot notation (top_up.completed, etc.)
       const payload = {
         email: {
-          [typeMap.top_up]: notificationPreferences.email.top_up,
-          [typeMap.wallet_transfer]: notificationPreferences.email.wallet_transfer,
-          [typeMap.reward]: notificationPreferences.email.reward,
+          top_up: notificationPreferences.email.top_up,
+          wallet_transfer: notificationPreferences.email.wallet_transfer,
+          reward: notificationPreferences.email.reward,
         },
         in_app: {
-          [typeMap.top_up]: notificationPreferences.in_app.top_up,
-          [typeMap.wallet_transfer]: notificationPreferences.in_app.wallet_transfer,
-          [typeMap.reward]: notificationPreferences.in_app.reward,
+          top_up: notificationPreferences.in_app.top_up,
+          wallet_transfer: notificationPreferences.in_app.wallet_transfer,
+          reward: notificationPreferences.in_app.reward,
         },
       };
 
@@ -372,14 +374,20 @@ export default function SettingsScreen() {
       });
 
       if (response.ok) {
+        // Update initial preferences BEFORE refreshUser to prevent reversion
+        // This matches the frontend pattern: setInitialPreferences(preferences) before refreshUser()
+        setInitialNotificationPrefs(notificationPreferences);
+        setNotificationPrefsDirty(false);
+        
         Toast.show({
           type: 'success',
           text1: 'Success',
           text2: 'Notification preferences saved',
           visibilityTime: 2000,
         });
-        setNotificationPrefsDirty(false);
-        await refreshUser(); // Refresh user to get updated preferences
+        
+        // Refresh user to sync with backend (useEffect won't overwrite because initialNotificationPrefs is set)
+        await refreshUser();
       } else {
         Toast.show({
           type: 'error',
