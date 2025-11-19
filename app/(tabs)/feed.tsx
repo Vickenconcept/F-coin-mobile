@@ -26,9 +26,11 @@ import { FeedMediaGrid } from '../../components/FeedMediaGrid';
 import { MentionText } from '../../components/MentionText';
 import { MentionInput } from '../../components/MentionInput';
 import { ImageZoomViewer } from '../../components/ImageZoomViewer';
+import { ShareModal } from '../../components/ShareModal';
 import * as ImagePicker from 'expo-image-picker';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import axios from 'axios';
+import { Clipboard } from 'react-native';
 
 type FeedPost = {
   id: string;
@@ -54,6 +56,7 @@ type FeedPost = {
     thumbnail_url: string | null;
     metadata: Record<string, unknown> | null;
   }>;
+  shared_post?: FeedPost; // Recursive type for shared posts
   created_at: string;
   updated_at: string;
 };
@@ -124,6 +127,8 @@ export default function FeedScreen() {
   const [sortBy, setSortBy] = useState<'newest' | 'popular'>('newest');
   const [postDetailModalVisible, setPostDetailModalVisible] = useState(false);
   const [postDetailPost, setPostDetailPost] = useState<FeedPost | null>(null);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [postToShare, setPostToShare] = useState<FeedPost | null>(null);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState<Record<string, string>>({});
   const [likingComment, setLikingComment] = useState<string | null>(null);
@@ -358,29 +363,69 @@ export default function FeedScreen() {
     setReplyContent({});
   };
 
-  const handleShare = async (post: FeedPost) => {
+  const handleShare = (post: FeedPost) => {
+    setPostToShare(post);
+    setShareModalVisible(true);
+  };
+
+  const handleCopyPostLink = (post: FeedPost) => {
+    const postUrl = `https://fcoin.app/posts/${post.id}`;
+    Clipboard.setString(postUrl);
+    Toast.show({
+      type: 'success',
+      text1: 'Link Copied',
+      text2: 'Post link copied to clipboard!',
+      visibilityTime: 2000,
+    });
+  };
+
+  const handleShareToTimeline = async (postId: string, comment?: string) => {
     try {
-      const response = await apiClient.post<{ id: string; shares_count: number }>(
-        `/v1/feed/posts/${post.id}/share`,
-        { comment: null }
+      const response = await apiClient.post<{ 
+        id: string; 
+        shares_count: number;
+        shared_post?: FeedPost;
+      }>(
+        `/v1/feed/posts/${postId}/share`,
+        { comment, share_to_timeline: true }
       );
 
       if (response.ok && response.data) {
         setPosts((prev) =>
           prev.map((p) =>
-            p.id === post.id
+            p.id === postId
               ? { ...p, shares_count: response.data!.shares_count }
               : p
           )
         );
+        
+        // If shared to timeline, add the new post to the feed
+        if (response.data.shared_post) {
+          setPosts((prev) => [response.data!.shared_post!, ...prev]);
+        }
+        
         Toast.show({
           type: 'success',
-          text1: 'Shared',
-          text2: 'Post shared successfully',
+          text1: 'Success',
+          text2: 'Post shared to your timeline!',
+          visibilityTime: 2000,
+        });
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail || 'Failed to share post',
+          visibilityTime: 3000,
         });
       }
     } catch (error) {
       console.error('Share error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to share post',
+        visibilityTime: 3000,
+      });
     }
   };
 
@@ -729,8 +774,94 @@ export default function FeedScreen() {
                 </View>
               </View>
 
-              {/* Post Content - Clickable to expand/collapse */}
-              {post.content && (
+              {/* Share Header - if this is a shared post */}
+              {post.shared_post && (
+                <View style={styles.shareHeader}>
+                  <View style={styles.shareHeaderContent}>
+                    <FontAwesome name="share" size={14} color="#FF6B00" />
+                    <Text style={styles.shareHeaderText}>
+                      {post.user.display_name || post.user.username} shared a post
+                    </Text>
+                  </View>
+                  {post.content && (
+                    <View style={styles.shareComment}>
+                      <MentionText text={post.content} style={styles.shareCommentText} />
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Post Content */}
+              {post.shared_post ? (
+                // Show shared post content in an embedded card
+                <View style={styles.sharedPostCard}>
+                  <View style={styles.sharedPostHeader}>
+                    <TouchableOpacity
+                      onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
+                      activeOpacity={0.7}
+                    >
+                      <Image
+                        source={{
+                          uri: post.shared_post!.user.avatar_url || 'https://via.placeholder.com/40',
+                        }}
+                        style={styles.avatar}
+                      />
+                    </TouchableOpacity>
+                    <View style={styles.postHeaderInfo}>
+                      <TouchableOpacity
+                        onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.postUsernameContainer}>
+                          <Text style={styles.postUsername}>
+                            {post.shared_post!.user.display_name || post.shared_post!.user.username}
+                          </Text>
+                          {post.shared_post!.user.verified_creator && (
+                            <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                      <Text style={styles.postTime}>{formatTime(post.shared_post!.created_at)}</Text>
+                    </View>
+                  </View>
+                  {post.shared_post.content && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setExpandedPosts((prev) => ({
+                          ...prev,
+                          [post.shared_post!.id]: !prev[post.shared_post!.id],
+                        }));
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <MentionText
+                        text={post.shared_post.content}
+                        style={styles.postContent}
+                        numberOfLines={expandedPosts[post.shared_post.id] ? undefined : 3}
+                      />
+                      {post.shared_post.content.length > 150 && (
+                        <Text style={styles.showMoreText}>
+                          {expandedPosts[post.shared_post.id] ? 'Show less' : 'Show more'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                  {post.shared_post.media.length > 0 && (
+                    <FeedMediaGrid
+                      media={post.shared_post.media}
+                      onImagePress={(index: number) => {
+                        setImageViewerMedia(post.shared_post!.media.map((m) => ({ url: m.url, type: m.type })));
+                        setImageViewerIndex(index);
+                        setSelectedImage({ url: post.shared_post!.media[index].url, type: post.shared_post!.media[index].type });
+                        setImageViewerVisible(true);
+                      }}
+                    />
+                  )}
+                </View>
+              ) : (
+                <>
+                  {/* Regular post content */}
+                  {post.content && (
                 <TouchableOpacity
                   onPress={() => {
                     setExpandedPosts((prev) => ({
@@ -753,17 +884,19 @@ export default function FeedScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Post Media */}
-              {post.media.length > 0 && (
-                <FeedMediaGrid
-                  media={post.media}
-                  onImagePress={(index: number) => {
-                    setImageViewerMedia(post.media.map((m) => ({ url: m.url, type: m.type })));
-                    setImageViewerIndex(index);
-                    setSelectedImage({ url: post.media[index].url, type: post.media[index].type });
-                    setImageViewerVisible(true);
-                  }}
-                />
+                  {/* Post Media */}
+                  {post.media.length > 0 && (
+                    <FeedMediaGrid
+                      media={post.media}
+                      onImagePress={(index: number) => {
+                        setImageViewerMedia(post.media.map((m) => ({ url: m.url, type: m.type })));
+                        setImageViewerIndex(index);
+                        setSelectedImage({ url: post.media[index].url, type: post.media[index].type });
+                        setImageViewerVisible(true);
+                      }}
+                    />
+                  )}
+                </>
               )}
 
               {/* Post Actions */}
@@ -786,13 +919,21 @@ export default function FeedScreen() {
                   <FontAwesome name="comment-o" size={20} color="#666" />
                   <Text style={styles.actionText}>{post.comments_count}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => handleShare(post)}
-                >
-                  <FontAwesome name="share" size={20} color="#666" />
-                  <Text style={styles.actionText}>{post.shares_count}</Text>
-                </TouchableOpacity>
+                <View style={styles.shareActions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleShare(post)}
+                  >
+                    <FontAwesome name="share" size={20} color="#666" />
+                    <Text style={styles.actionText}>{post.shares_count}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.copyLinkButton}
+                    onPress={() => handleCopyPostLink(post)}
+                  >
+                    <FontAwesome name="link" size={16} color="#666" />
+                  </TouchableOpacity>
+                </View>
                 {post.reward_enabled && (
                   <View style={styles.rewardBadge}>
                     <FontAwesome name="dollar" size={14} color="#FF6B00" />
@@ -1498,8 +1639,84 @@ export default function FeedScreen() {
                   </View>
                 </View>
 
+                {/* Share Header - if this is a shared post */}
+                {postDetailPost.shared_post && (
+                  <View style={styles.shareHeader}>
+                    <View style={styles.shareHeaderContent}>
+                      <FontAwesome name="share" size={14} color="#FF6B00" />
+                      <Text style={styles.shareHeaderText}>
+                        {postDetailPost.user.display_name || postDetailPost.user.username} shared a post
+                      </Text>
+                    </View>
+                    {postDetailPost.content && (
+                      <View style={styles.shareComment}>
+                        <MentionText text={postDetailPost.content} style={styles.shareCommentText} />
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 {/* Post Content */}
-                {postDetailPost.content && (
+                {postDetailPost.shared_post ? (
+                  // Show shared post content in an embedded card
+                  <View style={styles.sharedPostCard}>
+                    <View style={styles.sharedPostHeader}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          handleClosePostDetail();
+                          router.push(`/${postDetailPost.shared_post!.user.username}` as any);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Image
+                          source={{
+                            uri: postDetailPost.shared_post!.user.avatar_url || 'https://via.placeholder.com/40',
+                          }}
+                          style={styles.avatar}
+                        />
+                      </TouchableOpacity>
+                      <View style={styles.postHeaderInfo}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            handleClosePostDetail();
+                            router.push(`/${postDetailPost.shared_post!.user.username}` as any);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.postUsernameContainer}>
+                            <Text style={styles.postUsername}>
+                              {postDetailPost.shared_post!.user.display_name || postDetailPost.shared_post!.user.username}
+                            </Text>
+                            {postDetailPost.shared_post!.user.verified_creator && (
+                              <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                        <Text style={styles.postTime}>{formatTime(postDetailPost.shared_post!.created_at)}</Text>
+                      </View>
+                    </View>
+                    {postDetailPost.shared_post.content && (
+                      <MentionText
+                        text={postDetailPost.shared_post.content}
+                        style={styles.postContent}
+                      />
+                    )}
+                    {postDetailPost.shared_post.media.length > 0 && (
+                      <FeedMediaGrid
+                        media={postDetailPost.shared_post.media}
+                        onImagePress={(index: number) => {
+                          setImageViewerMedia(postDetailPost.shared_post!.media.map((m) => ({ url: m.url, type: m.type })));
+                          setImageViewerIndex(index);
+                          setSelectedImage({ url: postDetailPost.shared_post!.media[index].url, type: postDetailPost.shared_post!.media[index].type });
+                          setImageViewerVisible(true);
+                        }}
+                      />
+                    )}
+                  </View>
+                ) : (
+                  <>
+                    {/* Regular post content */}
+                    {postDetailPost.content && (
                   <TouchableOpacity
                     onPress={() => {
                       setExpandedPosts((prev) => ({
@@ -1522,17 +1739,19 @@ export default function FeedScreen() {
                   </TouchableOpacity>
                 )}
 
-                {/* Post Media */}
-                {postDetailPost.media.length > 0 && (
-                  <FeedMediaGrid
-                    media={postDetailPost.media}
-                    onImagePress={(index: number) => {
-                      setImageViewerMedia(postDetailPost.media.map((m) => ({ url: m.url, type: m.type })));
-                      setImageViewerIndex(index);
-                      setSelectedImage({ url: postDetailPost.media[index].url, type: postDetailPost.media[index].type });
-                      setImageViewerVisible(true);
-                    }}
-                  />
+                    {/* Post Media */}
+                    {postDetailPost.media.length > 0 && (
+                      <FeedMediaGrid
+                        media={postDetailPost.media}
+                        onImagePress={(index: number) => {
+                          setImageViewerMedia(postDetailPost.media.map((m) => ({ url: m.url, type: m.type })));
+                          setImageViewerIndex(index);
+                          setSelectedImage({ url: postDetailPost.media[index].url, type: postDetailPost.media[index].type });
+                          setImageViewerVisible(true);
+                        }}
+                      />
+                    )}
+                  </>
                 )}
 
                 {/* Post Actions */}
@@ -1677,6 +1896,22 @@ export default function FeedScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Share Modal */}
+      {postToShare && (
+        <ShareModal
+          visible={shareModalVisible}
+          onClose={() => {
+            setShareModalVisible(false);
+            setPostToShare(null);
+          }}
+          post={postToShare}
+          onShareToTimeline={async (comment?: string) => {
+            await handleShareToTimeline(postToShare.id, comment);
+          }}
+          postUrl={`https://fcoin.app/posts/${postToShare.id}`}
+        />
+      )}
 
       {/* Image Viewer Modal with Zoom */}
       <ImageZoomViewer
@@ -1837,6 +2072,49 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 2,
   },
+  shareHeader: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF6B00',
+  },
+  shareHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  shareHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+  },
+  shareComment: {
+    marginTop: 4,
+  },
+  shareCommentText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  sharedPostCard: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#fff',
+    marginTop: 8,
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  sharedPostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
   postContent: {
     fontSize: 15,
     color: '#000',
@@ -1877,6 +2155,14 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '600',
     marginLeft: 4,
+  },
+  shareActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  copyLinkButton: {
+    padding: 4,
   },
   rewardBadge: {
     marginLeft: 'auto',

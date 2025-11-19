@@ -16,10 +16,7 @@ type FeedMediaGridProps = {
   onImagePress?: (index: number) => void;
 };
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = 4;
-const GRID_PADDING = 16;
-const AVAILABLE_WIDTH = SCREEN_WIDTH - GRID_PADDING * 2;
 
 export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProps) {
   if (!media || media.length === 0) return null;
@@ -32,23 +29,25 @@ export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProp
       case 1:
         return {
           container: { flexDirection: 'column' as const },
-          items: [{ width: '100%', height: 300 }],
+          items: [
+            { height: 300, width: '100%' },
+          ],
         };
       case 2:
         return {
           container: { flexDirection: 'row' as const },
           items: [
-            { width: '48%', height: 200 },
-            { width: '48%', height: 200 },
+            { height: 200, width: '48%' },
+            { height: 200, width: '48%' },
           ],
         };
       case 3:
         return {
           container: { flexDirection: 'row' as const, flexWrap: 'wrap' as const },
           items: [
-            { width: '48%', height: 180 },
-            { width: '48%', height: 180 },
-            { width: '100%', height: 180 },
+            { height: 180, width: '48%' },
+            { height: 180, width: '48%' },
+            { height: 180, width: '100%' },
           ],
         };
       case 4:
@@ -56,10 +55,10 @@ export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProp
         return {
           container: { flexDirection: 'row' as const, flexWrap: 'wrap' as const },
           items: [
-            { width: '48%', height: 160 },
-            { width: '48%', height: 160 },
-            { width: '48%', height: 160 },
-            { width: '48%', height: 160 },
+            { height: 160, width: '48%' },
+            { height: 160, width: '48%' },
+            { height: 160, width: '48%' },
+            { height: 160, width: '48%' },
           ],
         };
     }
@@ -71,12 +70,9 @@ export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProp
   const renderMediaItem = (item: MediaItem, index: number) => {
     const itemStyle = layout.items[index] || layout.items[0];
     const isLast = index === displayMedias.length - 1 && remainingCount > 0;
-    
-    // Convert percentage strings to numbers
-    const widthPercent = typeof itemStyle.width === 'string' 
-      ? parseFloat(itemStyle.width.replace('%', '')) 
-      : 100;
-    const widthValue = (AVAILABLE_WIDTH * widthPercent) / 100 - (index % 2 === 0 ? GRID_GAP : 0);
+    const isEvenIndex = index % 2 === 0;
+    const width = itemStyle.width || '100%';
+    const isFullWidth = width === '100%';
 
     return (
       <TouchableOpacity
@@ -84,9 +80,9 @@ export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProp
         style={[
           styles.mediaItem,
           {
-            width: widthValue,
+            width: width as any,
             height: itemStyle.height,
-            marginRight: index % 2 === 0 ? GRID_GAP : 0,
+            marginRight: isEvenIndex && !isFullWidth ? GRID_GAP : 0,
             marginBottom: GRID_GAP,
           },
         ]}
@@ -132,13 +128,14 @@ export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProp
 const styles = StyleSheet.create({
   container: {
     marginBottom: 12,
-    marginHorizontal: -GRID_GAP / 2,
+    width: '100%',
   },
   mediaItem: {
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#f0f0f0',
     position: 'relative',
+    minWidth: 0, // Important for flex children to shrink properly
   },
   mediaImage: {
     width: '100%',

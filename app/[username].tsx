@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -22,7 +23,9 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { FeedMediaGrid } from '../components/FeedMediaGrid';
 import { MentionText } from '../components/MentionText';
 import { ImageZoomViewer } from '../components/ImageZoomViewer';
+import { ShareModal } from '../components/ShareModal';
 import { Video, ResizeMode } from 'expo-av';
+import { Clipboard } from 'react-native';
 
 type FeedPost = {
   id: string;
@@ -55,6 +58,7 @@ type FeedPost = {
     thumbnail_url: string | null;
     metadata: Record<string, unknown> | null;
   }>;
+  shared_post?: FeedPost; // Recursive type for shared posts
   created_at: string;
   updated_at: string;
 };
@@ -112,6 +116,26 @@ export default function UserProfileScreen() {
   const [imageTranslateY] = useState(new Animated.Value(0));
   const [lastScale] = useState({ value: 1 });
   const [lastTranslate] = useState({ x: 0, y: 0 });
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [postToShare, setPostToShare] = useState<FeedPost | null>(null);
+  
+  // Post management states
+  const [postUpdating, setPostUpdating] = useState<Record<string, boolean>>({});
+  const [postDeleting, setPostDeleting] = useState<Record<string, boolean>>({});
+  const [rewardToggleLoading, setRewardToggleLoading] = useState<string | null>(null);
+  const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
+  const [editPostContent, setEditPostContent] = useState('');
+  const [enableRewardsModalPost, setEnableRewardsModalPost] = useState<FeedPost | null>(null);
+  const [walletCoins, setWalletCoins] = useState<Array<{ coin_symbol: string; balance: number }>>([]);
+  const [isWalletCoinsLoading, setIsWalletCoinsLoading] = useState(false);
+  const [enableRewardsForm, setEnableRewardsForm] = useState({
+    reward_pool: 0,
+    reward_coin_symbol: (user?.default_coin_symbol ?? 'FCN').toUpperCase(),
+    like: 1,
+    comment: 2,
+    share: 3,
+    per_user_cap: 10,
+  });
 
   const fetchProfile = useCallback(async () => {
     if (!username) return;
@@ -252,6 +276,332 @@ export default function UserProfileScreen() {
       console.error('Like error:', error);
     }
   };
+
+  const handleShare = (post: FeedPost) => {
+    setPostToShare(post);
+    setShareModalVisible(true);
+  };
+
+  const handleCopyPostLink = (post: FeedPost) => {
+    const postUrl = `https://fcoin.app/posts/${post.id}`;
+    Clipboard.setString(postUrl);
+    Toast.show({
+      type: 'success',
+      text1: 'Link Copied',
+      text2: 'Post link copied to clipboard!',
+      visibilityTime: 2000,
+    });
+  };
+
+  const handleShareToTimeline = async (postId: string, comment?: string) => {
+    try {
+      const response = await apiClient.post<{ 
+        id: string; 
+        shares_count: number;
+        shared_post?: FeedPost;
+      }>(
+        `/v1/feed/posts/${postId}/share`,
+        { comment, share_to_timeline: true }
+      );
+
+      if (response.ok && response.data) {
+        setProfile((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            recent_posts: prev.recent_posts.map((p) =>
+              p.id === postId
+                ? { ...p, shares_count: response.data!.shares_count }
+                : p
+            ),
+          };
+        });
+        
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'Post shared to your timeline!',
+          visibilityTime: 2000,
+        });
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail || 'Failed to share post',
+          visibilityTime: 3000,
+        });
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to share post',
+        visibilityTime: 3000,
+      });
+    }
+  };
+
+  const updateLocalPost = useCallback((updatedPost: FeedPost) => {
+    setProfile((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        recent_posts: prev.recent_posts.map((post) =>
+          post.id === updatedPost.id ? updatedPost : post
+        ),
+      };
+    });
+  }, []);
+
+  const removeLocalPost = useCallback((postId: string, wasRewarded: boolean, rewardPool: number) => {
+    setProfile((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        posts_count: Math.max(0, prev.posts_count - 1),
+        reward_posts_count: wasRewarded ? Math.max(0, prev.reward_posts_count - 1) : prev.reward_posts_count,
+        reward_pool_total: wasRewarded ? Math.max(0, prev.reward_pool_total - rewardPool) : prev.reward_pool_total,
+        recent_posts: prev.recent_posts.filter((post) => post.id !== postId),
+      };
+    });
+  }, []);
+
+  const handlePostUpdate = useCallback(
+    async (postId: string, data: Partial<Pick<FeedPost, 'content' | 'visibility' | 'reward_enabled' | 'reward_rule' | 'reward_coin_symbol' | 'reward_pool'>>) => {
+      setPostUpdating((prev) => ({ ...prev, [postId]: true }));
+      try {
+        const response = await apiClient.put<FeedPost>(`/v1/feed/posts/${postId}`, data);
+
+        if (response.ok && response.data) {
+          updateLocalPost(response.data);
+          Toast.show({
+            type: 'success',
+            text1: 'Success',
+            text2: 'Post updated',
+            visibilityTime: 2000,
+          });
+        } else {
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: response.errors?.[0]?.detail || 'Failed to update post',
+            visibilityTime: 3000,
+          });
+        }
+      } catch (error) {
+        console.error('[Profile] update post error', error);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: 'Failed to update post',
+          visibilityTime: 3000,
+        });
+      } finally {
+        setPostUpdating((prev) => {
+          const next = { ...prev };
+          delete next[postId];
+          return next;
+        });
+      }
+    },
+    [updateLocalPost],
+  );
+
+  const handleDisableRewards = useCallback(
+    async (post: FeedPost) => {
+      setRewardToggleLoading(post.id);
+      await handlePostUpdate(post.id, { reward_enabled: false });
+      setRewardToggleLoading(null);
+    },
+    [handlePostUpdate],
+  );
+
+  const handleDeletePost = useCallback(
+    async (post: FeedPost) => {
+      Alert.alert(
+        'Delete Post',
+        'Delete this post permanently?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              setPostDeleting((prev) => ({ ...prev, [post.id]: true }));
+              try {
+                const response = await apiClient.delete(`/v1/feed/posts/${post.id}`);
+
+                if (response.ok) {
+                  removeLocalPost(post.id, post.reward_enabled, post.reward_pool || 0);
+                  Toast.show({
+                    type: 'success',
+                    text1: 'Success',
+                    text2: 'Post deleted',
+                    visibilityTime: 2000,
+                  });
+                } else {
+                  Toast.show({
+                    type: 'error',
+                    text1: 'Error',
+                    text2: response.errors?.[0]?.detail || 'Failed to delete post',
+                    visibilityTime: 3000,
+                  });
+                }
+              } catch (error) {
+                console.error('[Profile] delete post error', error);
+                Toast.show({
+                  type: 'error',
+                  text1: 'Error',
+                  text2: 'Failed to delete post',
+                  visibilityTime: 3000,
+                });
+              } finally {
+                setPostDeleting((prev) => {
+                  const next = { ...prev };
+                  delete next[post.id];
+                  return next;
+                });
+              }
+            },
+          },
+        ]
+      );
+    },
+    [removeLocalPost],
+  );
+
+  const handleEditPost = useCallback((post: FeedPost) => {
+    setEditingPost(post);
+    setEditPostContent(post.content || '');
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingPost) return;
+    if (!editPostContent.trim()) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Post content cannot be empty',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+    await handlePostUpdate(editingPost.id, { content: editPostContent.trim() });
+    setEditingPost(null);
+    setEditPostContent('');
+  }, [editingPost, editPostContent, handlePostUpdate]);
+
+  const fetchWalletCoins = useCallback(async () => {
+    setIsWalletCoinsLoading(true);
+    try {
+      const response = await apiClient.get<{
+        coin_balances?: Array<{ coin_symbol?: string; balance?: number }>;
+      }>('/v1/wallets/me');
+
+      if (response.ok && response.data) {
+        const balances = Array.isArray(response.data.coin_balances)
+          ? response.data.coin_balances
+              .map((coin) => ({
+                coin_symbol: String(coin.coin_symbol ?? '').toUpperCase(),
+                balance: Number(coin.balance ?? 0) || 0,
+              }))
+              .filter((coin) => coin.coin_symbol)
+          : [];
+
+        setWalletCoins(balances);
+
+        if (balances.length > 0) {
+          setEnableRewardsForm((prev) => {
+            const hasCurrent = balances.some((coin) => coin.coin_symbol === prev.reward_coin_symbol);
+            return {
+              ...prev,
+              reward_coin_symbol: hasCurrent ? prev.reward_coin_symbol : balances[0].coin_symbol,
+            };
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[Profile] wallet coins error', error);
+    } finally {
+      setIsWalletCoinsLoading(false);
+    }
+  }, []);
+
+  const openEnableRewardsModal = useCallback(
+    (post: FeedPost) => {
+      setEnableRewardsModalPost(post);
+      setEnableRewardsForm((prev) => ({
+        reward_pool: Math.max(post.reward_pool || 0, 10),
+        reward_coin_symbol: (post.reward_coin_symbol ?? prev.reward_coin_symbol ?? (user?.default_coin_symbol ?? 'FCN')).toUpperCase(),
+        like: post.reward_rule?.like ?? prev.like ?? 1,
+        comment: post.reward_rule?.comment ?? prev.comment ?? 2,
+        share: post.reward_rule?.share ?? prev.share ?? 3,
+        per_user_cap: post.reward_rule?.per_user_cap ?? prev.per_user_cap ?? 10,
+      }));
+      fetchWalletCoins().catch(() => null);
+    },
+    [fetchWalletCoins, user?.default_coin_symbol],
+  );
+
+  const handleEnableRewardsSubmit = useCallback(async () => {
+    if (!enableRewardsModalPost) return;
+
+    if (enableRewardsForm.reward_pool <= 0) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Reward pool must be greater than zero',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    const selectedCoin = walletCoins.find(
+      (coin) => coin.coin_symbol === enableRewardsForm.reward_coin_symbol
+    );
+    if (!selectedCoin || selectedCoin.balance < enableRewardsForm.reward_pool) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Insufficient balance for selected coin',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    setRewardToggleLoading(enableRewardsModalPost.id);
+    try {
+      await handlePostUpdate(enableRewardsModalPost.id, {
+        reward_enabled: true,
+        reward_pool: enableRewardsForm.reward_pool,
+        reward_coin_symbol: enableRewardsForm.reward_coin_symbol,
+        reward_rule: {
+          like: enableRewardsForm.like,
+          comment: enableRewardsForm.comment,
+          share: enableRewardsForm.share,
+          per_user_cap: enableRewardsForm.per_user_cap,
+        },
+      });
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Rewards enabled on this post',
+        visibilityTime: 2000,
+      });
+      setEnableRewardsModalPost(null);
+    } catch (error) {
+      console.error('[Profile] enable rewards error', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to enable rewards',
+        visibilityTime: 3000,
+      });
+    } finally {
+      setRewardToggleLoading(null);
+    }
+  }, [enableRewardsModalPost, enableRewardsForm, walletCoins, handlePostUpdate]);
 
   if (isLoading) {
     return (
@@ -456,40 +806,127 @@ export default function UserProfileScreen() {
                 </View>
               </View>
 
-              {/* Post Content */}
-              {post.content && (
-                <TouchableOpacity
-                  onPress={() => {
-                    setExpandedPosts((prev) => ({
-                      ...prev,
-                      [post.id]: !prev[post.id],
-                    }));
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <MentionText
-                    text={post.content}
-                    style={styles.postContent}
-                    numberOfLines={expandedPosts[post.id] ? undefined : 3}
-                  />
-                  {post.content.length > 150 && (
-                    <Text style={styles.showMoreText}>
-                      {expandedPosts[post.id] ? 'Show less' : 'Show more'}
+              {/* Share Header - if this is a shared post */}
+              {post.shared_post && (
+                <View style={styles.shareHeader}>
+                  <View style={styles.shareHeaderContent}>
+                    <FontAwesome name="share" size={14} color="#FF6B00" />
+                    <Text style={styles.shareHeaderText}>
+                      {post.user.display_name || post.user.username} shared a post
                     </Text>
+                  </View>
+                  {post.content && (
+                    <View style={styles.shareComment}>
+                      <MentionText text={post.content} style={styles.shareCommentText} />
+                    </View>
                   )}
-                </TouchableOpacity>
+                </View>
               )}
 
-              {/* Post Media */}
-              {post.media.length > 0 && (
-                <FeedMediaGrid
-                  media={post.media}
-                  onImagePress={(index: number) => {
-                    setImageViewerMedia(post.media.map((m) => ({ url: m.url, type: m.type })));
-                    setImageViewerIndex(index);
-                    setImageViewerVisible(true);
-                  }}
-                />
+              {/* Post Content */}
+              {post.shared_post ? (
+                // Show shared post content in an embedded card
+                <View style={styles.sharedPostCard}>
+                  <View style={styles.sharedPostHeader}>
+                    <TouchableOpacity
+                      onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
+                      activeOpacity={0.7}
+                    >
+                      <Image
+                        source={{
+                          uri: post.shared_post!.user.avatar_url || 'https://via.placeholder.com/40',
+                        }}
+                        style={styles.avatar}
+                      />
+                    </TouchableOpacity>
+                    <View style={styles.postHeaderInfo}>
+                      <TouchableOpacity
+                        onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.postUsernameContainer}>
+                          <Text style={styles.postUsername}>
+                            {post.shared_post!.user.display_name || post.shared_post!.user.username}
+                          </Text>
+                          {post.shared_post!.user.verified_creator && (
+                            <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                      <Text style={styles.postTime}>{formatTime(post.shared_post!.created_at)}</Text>
+                    </View>
+                  </View>
+                  {post.shared_post.content && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setExpandedPosts((prev) => ({
+                          ...prev,
+                          [post.shared_post!.id]: !prev[post.shared_post!.id],
+                        }));
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <MentionText
+                        text={post.shared_post.content}
+                        style={styles.postContent}
+                        numberOfLines={expandedPosts[post.shared_post.id] ? undefined : 3}
+                      />
+                      {post.shared_post.content.length > 150 && (
+                        <Text style={styles.showMoreText}>
+                          {expandedPosts[post.shared_post.id] ? 'Show less' : 'Show more'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                  {post.shared_post.media.length > 0 && (
+                    <FeedMediaGrid
+                      media={post.shared_post.media}
+                      onImagePress={(index: number) => {
+                        setImageViewerMedia(post.shared_post!.media.map((m) => ({ url: m.url, type: m.type })));
+                        setImageViewerIndex(index);
+                        setImageViewerVisible(true);
+                      }}
+                    />
+                  )}
+                </View>
+              ) : (
+                <>
+                  {/* Regular post content */}
+                  {post.content && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setExpandedPosts((prev) => ({
+                          ...prev,
+                          [post.id]: !prev[post.id],
+                        }));
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <MentionText
+                        text={post.content}
+                        style={styles.postContent}
+                        numberOfLines={expandedPosts[post.id] ? undefined : 3}
+                      />
+                      {post.content.length > 150 && (
+                        <Text style={styles.showMoreText}>
+                          {expandedPosts[post.id] ? 'Show less' : 'Show more'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Post Media */}
+                  {post.media.length > 0 && (
+                    <FeedMediaGrid
+                      media={post.media}
+                      onImagePress={(index: number) => {
+                        setImageViewerMedia(post.media.map((m) => ({ url: m.url, type: m.type })));
+                        setImageViewerIndex(index);
+                        setImageViewerVisible(true);
+                      }}
+                    />
+                  )}
+                </>
               )}
 
               {/* Post Actions */}
@@ -509,10 +946,21 @@ export default function UserProfileScreen() {
                   <FontAwesome name="comment-o" size={20} color="#666" />
                   <Text style={styles.actionText}>{post.comments_count}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
-                  <FontAwesome name="share" size={20} color="#666" />
-                  <Text style={styles.actionText}>{post.shares_count}</Text>
-                </TouchableOpacity>
+                <View style={styles.shareActions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleShare(post)}
+                  >
+                    <FontAwesome name="share" size={20} color="#666" />
+                    <Text style={styles.actionText}>{post.shares_count}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.copyLinkButton}
+                    onPress={() => handleCopyPostLink(post)}
+                  >
+                    <FontAwesome name="link" size={16} color="#666" />
+                  </TouchableOpacity>
+                </View>
                 {post.reward_enabled && (
                   <View style={styles.rewardBadge}>
                     <FontAwesome name="dollar" size={14} color="#FF6B00" />
@@ -520,6 +968,95 @@ export default function UserProfileScreen() {
                   </View>
                 )}
               </View>
+
+              {/* Post Management (only for own posts) */}
+              {profile.is_current_user && (
+                <View style={styles.postManagement}>
+                  <View style={styles.managementRow}>
+                    <Text style={styles.managementLabel}>Visibility:</Text>
+                    <View style={styles.visibilityButtons}>
+                      {(['public', 'followers', 'private'] as const).map((vis) => (
+                        <TouchableOpacity
+                          key={vis}
+                          style={[
+                            styles.visibilityButton,
+                            post.visibility === vis && styles.visibilityButtonActive,
+                            postUpdating[post.id] && styles.visibilityButtonDisabled,
+                          ]}
+                          onPress={() => handlePostUpdate(post.id, { visibility: vis })}
+                          disabled={postUpdating[post.id]}
+                        >
+                          <FontAwesome
+                            name={vis === 'public' ? 'globe' : vis === 'followers' ? 'users' : 'lock'}
+                            size={14}
+                            color={post.visibility === vis ? '#fff' : '#666'}
+                          />
+                          <Text
+                            style={[
+                              styles.visibilityButtonText,
+                              post.visibility === vis && styles.visibilityButtonTextActive,
+                            ]}
+                          >
+                            {vis.charAt(0).toUpperCase() + vis.slice(1)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={styles.managementActions}>
+                    <TouchableOpacity
+                      style={styles.managementButton}
+                      onPress={() => handleEditPost(post)}
+                    >
+                      <FontAwesome name="edit" size={14} color="#666" />
+                      <Text style={styles.managementButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                    {post.reward_enabled ? (
+                      <TouchableOpacity
+                        style={styles.managementButton}
+                        onPress={() => handleDisableRewards(post)}
+                        disabled={rewardToggleLoading === post.id}
+                      >
+                        {rewardToggleLoading === post.id ? (
+                          <ActivityIndicator size="small" color="#666" />
+                        ) : (
+                          <FontAwesome name="dollar" size={14} color="#666" />
+                        )}
+                        <Text style={styles.managementButtonText}>Disable Rewards</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.managementButton, styles.managementButtonPrimary]}
+                        onPress={() => openEnableRewardsModal(post)}
+                        disabled={rewardToggleLoading === post.id}
+                      >
+                        {rewardToggleLoading === post.id ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <FontAwesome name="dollar" size={14} color="#fff" />
+                        )}
+                        <Text style={[styles.managementButtonText, styles.managementButtonTextPrimary]}>
+                          Enable Rewards
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.managementButton, styles.managementButtonDanger]}
+                      onPress={() => handleDeletePost(post)}
+                      disabled={postDeleting[post.id]}
+                    >
+                      {postDeleting[post.id] ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <FontAwesome name="trash" size={14} color="#fff" />
+                      )}
+                      <Text style={[styles.managementButtonText, styles.managementButtonTextDanger]}>
+                        Delete
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
           ))
         )}
@@ -580,6 +1117,12 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 16,
     textAlign: 'center',
+  },
+  errorTextForm: {
+    fontSize: 14,
+    color: '#dc2626',
+    textAlign: 'center',
+    padding: 20,
   },
   scrollView: {
     flex: 1,
@@ -779,6 +1322,49 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 2,
   },
+  shareHeader: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF6B00',
+  },
+  shareHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  shareHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+  },
+  shareComment: {
+    marginTop: 4,
+  },
+  shareCommentText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  sharedPostCard: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#fff',
+    marginTop: 8,
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  sharedPostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
   postContent: {
     fontSize: 15,
     color: '#000',
@@ -820,6 +1406,235 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FF6B00',
     fontWeight: '600',
+  },
+  shareActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  copyLinkButton: {
+    padding: 4,
+  },
+  postManagement: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  managementRow: {
+    marginBottom: 12,
+  },
+  managementLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  visibilityButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  visibilityButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    backgroundColor: '#fff',
+  },
+  visibilityButtonActive: {
+    backgroundColor: '#FF6B00',
+    borderColor: '#FF6B00',
+  },
+  visibilityButtonDisabled: {
+    opacity: 0.5,
+  },
+  visibilityButtonText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  visibilityButtonTextActive: {
+    color: '#fff',
+  },
+  managementActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  managementButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    backgroundColor: '#fff',
+  },
+  managementButtonPrimary: {
+    backgroundColor: '#FF6B00',
+    borderColor: '#FF6B00',
+  },
+  managementButtonDanger: {
+    backgroundColor: '#dc2626',
+    borderColor: '#dc2626',
+  },
+  managementButtonText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  managementButtonTextPrimary: {
+    color: '#fff',
+  },
+  managementButtonTextDanger: {
+    color: '#fff',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  modalScrollContent: {
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  modalBody: {
+    padding: 16,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonPrimary: {
+    backgroundColor: '#FF6B00',
+  },
+  modalButtonSecondary: {
+    backgroundColor: '#f0f0f0',
+  },
+  modalButtonTextPrimary: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonTextSecondary: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  editInput: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 8,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    backgroundColor: '#fff',
+  },
+  formHint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  coinSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  coinOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    backgroundColor: '#fff',
+  },
+  coinOptionActive: {
+    backgroundColor: '#FF6B00',
+    borderColor: '#FF6B00',
+  },
+  coinOptionText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  coinOptionTextActive: {
+    color: '#fff',
+  },
+  rewardInputs: {
+    gap: 12,
+  },
+  rewardInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  rewardInputLabel: {
+    fontSize: 14,
+    color: '#666',
+    width: 80,
+  },
+  rewardInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    backgroundColor: '#fff',
+  },
+  loadingSpinner: {
+    padding: 40,
   },
 });
 
