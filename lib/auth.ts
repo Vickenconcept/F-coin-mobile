@@ -3,9 +3,14 @@ import { apiClient } from './apiClient';
 export type User = {
   id: number;
   name: string;
+  username?: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
   email: string;
   email_verified_at: string | null;
   role: 'admin' | 'creator' | 'fan';
+  default_coin_symbol?: string | null;
+  verified_creator?: boolean;
   created_at: string;
   updated_at: string;
 };

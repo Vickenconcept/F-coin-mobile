@@ -39,8 +39,8 @@ function RootLayoutNav() {
       // Redirect to login if not authenticated
       router.replace('/login');
     } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to tabs if authenticated and on auth screen
-      router.replace('/(tabs)');
+      // Redirect to feed tab if authenticated and on auth screen
+      router.replace('/(tabs)/feed');
     }
   }, [isAuthenticated, loading, segments]);
 
@@ -63,6 +63,13 @@ function RootLayoutNav() {
           options={{ 
             title: 'Profile',
             headerShown: true,
+            presentation: 'card',
+          }} 
+        />
+        <Stack.Screen 
+          name="[username]" 
+          options={{ 
+            headerShown: false,
             presentation: 'card',
           }} 
         />

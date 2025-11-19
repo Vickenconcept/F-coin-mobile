@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../lib/apiClient';
 import Toast from 'react-native-toast-message';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 
 type SocialAccount = {
@@ -67,6 +68,36 @@ export default function ProfileScreen() {
     loadAccounts();
   }, [loadAccounts]);
 
+  // Listen for deep links (OAuth callbacks) - optional enhancement
+  // For now, we rely on browser close detection and polling
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', (event) => {
+      const { url } = event;
+      console.log('Deep link received:', url);
+      
+      // Check if it's an OAuth callback
+      if (url.includes('oauth-callback') || url.includes('oauth')) {
+        // Reload accounts after OAuth callback
+        setTimeout(() => {
+          loadAccounts();
+        }, 1000);
+      }
+    });
+
+    // Check if app was opened with a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url && (url.includes('oauth-callback') || url.includes('oauth'))) {
+        setTimeout(() => {
+          loadAccounts();
+        }, 1000);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [loadAccounts]);
+
   const connectAccount = async (provider: string) => {
     if (isConnecting[provider]) return;
 
@@ -74,14 +105,14 @@ export default function ProfileScreen() {
 
     try {
       // Get the login URL from backend
-      // Use a valid URL format - for mobile we can use the API origin or a mobile app URL
-      // The backend needs a valid URL for OAuth callback handling
+      // Use a valid HTTP URL for origin (backend validation requires valid URL)
+      // For mobile, we'll detect browser close and refresh accounts
       const apiBaseUrl = 
         Constants.expoConfig?.extra?.apiBaseUrl || 
         process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/+$/, '') || 
         'http://localhost:8000/api';
       const apiOrigin = apiBaseUrl.replace(/\/api\/?$/, ''); // Remove /api to get origin
-      const origin = `${apiOrigin}/mobile-oauth-callback`; // Valid URL for mobile OAuth
+      const origin = `${apiOrigin}/mobile-oauth-callback`; // Valid URL for backend validation
       
       const response = await apiClient.get<{ url: string }>(
         `/v1/oauth/${provider}/login-url?origin=${encodeURIComponent(origin)}`
@@ -97,8 +128,13 @@ export default function ProfileScreen() {
       }
 
       // Open the OAuth URL in browser
-      const result = await WebBrowser.openBrowserAsync(response.data.url);
+      const result = await WebBrowser.openBrowserAsync(response.data.url, {
+        // Enable toolbar for better UX
+        enableBarCollapsing: false,
+      });
 
+      // After browser closes, check if connection was successful
+      // The backend processes the OAuth callback, so we refresh accounts
       if (result.type === 'cancel') {
         Toast.show({
           type: 'info',
@@ -106,10 +142,22 @@ export default function ProfileScreen() {
           text2: 'Connection cancelled',
         });
       } else {
-        // Reload accounts after connection
+        // Wait a bit for backend to process, then refresh accounts
+        Toast.show({
+          type: 'info',
+          text1: 'Processing...',
+          text2: 'Checking connection status...',
+        });
+        
+        // Poll for account updates (backend might take a moment)
         setTimeout(() => {
           loadAccounts();
         }, 2000);
+        
+        // Also check again after a longer delay
+        setTimeout(() => {
+          loadAccounts();
+        }, 5000);
       }
     } catch (error) {
       console.error('Connect account error:', error);
