@@ -62,6 +62,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="my-coin"
+        options={{
+          href: null, // Hide from tab bar, accessible via navigation
+        }}
+      />
+      <Tabs.Screen
         name="two"
         options={{
           href: null, // Hide from tab bar
