@@ -20,7 +20,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../lib/apiClient';
 import Toast from 'react-native-toast-message';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { FeedLayout } from '../../components/FeedLayout';
 import { FeedMediaGrid } from '../../components/FeedMediaGrid';
 import { MentionText } from '../../components/MentionText';
@@ -92,6 +92,7 @@ type Comment = {
 export default function FeedScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams<{ openPost?: string; commentId?: string }>();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -174,6 +175,19 @@ export default function FeedScreen() {
   useEffect(() => {
     loadFeed();
   }, [loadFeed]);
+
+  // Handle deep link to open specific post from notifications
+  useEffect(() => {
+    if (params.openPost && posts.length > 0) {
+      const post = posts.find((p) => p.id === params.openPost);
+      if (post) {
+        setPostDetailPost(post);
+        setPostDetailModalVisible(true);
+        // Clear the param to prevent reopening
+        router.setParams({ openPost: undefined, commentId: undefined });
+      }
+    }
+  }, [params.openPost, posts, router]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

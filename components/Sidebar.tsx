@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../hooks/useNotifications';
 
 type SidebarItem = {
   name: string;
@@ -15,15 +16,16 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
 
   const menuItems: SidebarItem[] = [
     { name: 'Home', icon: 'home', path: '/(tabs)/feed' },
     { name: 'Explore', icon: 'compass', path: '/discover' },
-    { name: 'Notifications', icon: 'bell', path: '/(tabs)/feed' }, // TODO: Add notifications screen
+    { name: 'Notifications', icon: 'bell', path: '/(tabs)/notifications', badge: unreadCount },
     { name: 'Messages', icon: 'envelope', path: '/(tabs)/feed' }, // TODO: Add messages screen
     { name: 'Bookmarks', icon: 'bookmark', path: '/(tabs)/feed' }, // TODO: Add bookmarks screen
     { name: 'Profile', icon: 'user', path: `/profile` },
-    { name: 'Wallet', icon: 'credit-card', path: '/(tabs)/two' },
+    { name: 'Wallet', icon: 'credit-card', path: '/(tabs)/wallet' },
     { name: 'Settings', icon: 'cog', path: '/(tabs)/feed' }, // TODO: Add settings screen
   ];
 
