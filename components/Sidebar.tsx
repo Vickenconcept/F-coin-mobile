@@ -21,7 +21,7 @@ export function Sidebar() {
   const menuItems: SidebarItem[] = [
     { name: 'Home', icon: 'home', path: '/(tabs)/feed' },
     { name: 'Explore', icon: 'compass', path: '/discover' },
-    { name: 'Notifications', icon: 'bell', path: '/(tabs)/notifications', badge: unreadCount },
+    { name: 'Notifications', icon: 'bell', path: '/(tabs)/notifications', badge: unreadCount || 0 },
     { name: 'Messages', icon: 'envelope', path: '/(tabs)/feed' }, // TODO: Add messages screen
     { name: 'Bookmarks', icon: 'bookmark', path: '/(tabs)/feed' }, // TODO: Add bookmarks screen
     { name: 'Profile', icon: 'user', path: `/profile` },
@@ -75,9 +75,9 @@ export function Sidebar() {
               >
                 {item.name}
               </Text>
-              {item.badge && item.badge > 0 && (
+              {item.badge !== undefined && item.badge > 0 && (
                 <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.badge}</Text>
+                  <Text style={styles.badgeText}>{String(item.badge)}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -106,16 +106,16 @@ export function Sidebar() {
                 />
               ) : (
                 <Text style={styles.userAvatarText}>
-                  {user.display_name?.[0]?.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U'}
+                  {String(user.display_name || user.username || 'U')[0]?.toUpperCase() || 'U'}
                 </Text>
               )}
             </View>
             <View style={styles.userInfo}>
               <Text style={styles.userName} numberOfLines={1}>
-                {user.display_name || user.username}
+                {String(user.display_name || user.username || 'User')}
               </Text>
               <Text style={styles.userHandle} numberOfLines={1}>
-                @{user.username}
+                @{String(user.username || 'user')}
               </Text>
             </View>
             <FontAwesome name="ellipsis-h" size={16} color="#666" />
