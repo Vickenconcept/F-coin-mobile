@@ -8,10 +8,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { apiClient } from '../lib/apiClient';
 import Toast from 'react-native-toast-message';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 type DiscoverUser = {
   id: string;
@@ -175,62 +177,88 @@ export default function DiscoverScreen() {
           style={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
-          {users.map((user) => (
-            <View key={user.id} style={styles.userCard}>
-              <View style={styles.userInfo}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {user.display_name?.[0]?.toUpperCase() || user.username[0]?.toUpperCase() || '?'}
-                  </Text>
-                </View>
-                <View style={styles.userDetails}>
-                  <View style={styles.userNameRow}>
-                    <Text style={styles.userName}>
-                      {user.display_name || user.username}
-                    </Text>
-                    {user.verified_creator && (
-                      <View style={styles.verifiedBadge}>
-                        <Text style={styles.verifiedText}>✓</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.userHandle}>@{user.username}</Text>
-                  <View style={styles.statsRow}>
-                    <Text style={styles.statText}>
-                      {user.followers_count || 0} followers
-                    </Text>
-                    {user.default_coin_symbol && (
-                      <Text style={styles.coinText}>
-                        {user.default_coin_symbol}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              </View>
+          {users.map((user) => {
+            const initials = (user.display_name || user.username)
+              .split(' ')
+              .map((part) => part.charAt(0).toUpperCase())
+              .join('')
+              .slice(0, 2);
+
+            return (
               <TouchableOpacity
-                style={[
-                  styles.followButton,
-                  user.is_following && styles.followingButton,
-                  loadingFollows[user.id] && styles.buttonDisabled,
-                ]}
-                onPress={() => handleFollow(user.id, user.is_following || false)}
-                disabled={loadingFollows[user.id]}
+                key={user.id}
+                style={styles.userCard}
+                onPress={() => router.push(`/${user.username}` as any)}
+                activeOpacity={0.7}
               >
-                {loadingFollows[user.id] ? (
-                  <ActivityIndicator size="small" color={user.is_following ? '#666' : '#fff'} />
-                ) : (
-                  <Text
-                    style={[
-                      styles.followButtonText,
-                      user.is_following && styles.followingButtonText,
-                    ]}
-                  >
-                    {user.is_following ? 'Following' : 'Follow'}
-                  </Text>
-                )}
+                <View style={styles.userInfo}>
+                  {user.avatar_url ? (
+                    <Image
+                      source={{ uri: user.avatar_url }}
+                      style={styles.avatar}
+                    />
+                  ) : (
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{initials}</Text>
+                    </View>
+                  )}
+                  <View style={styles.userDetails}>
+                    <View style={styles.userNameRow}>
+                      <Text style={styles.userName} numberOfLines={1}>
+                        {user.display_name || user.username}
+                      </Text>
+                      {user.verified_creator && (
+                        <View style={styles.verifiedBadge}>
+                          <FontAwesome name="check" size={10} color="#fff" />
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.userHandle} numberOfLines={1}>
+                      @{user.username}
+                    </Text>
+                    <View style={styles.statsRow}>
+                      <Text style={styles.statText}>
+                        {user.followers_count || 0} followers
+                      </Text>
+                      {user.default_coin_symbol && (
+                        <View style={styles.coinBadge}>
+                          <FontAwesome name="coins" size={10} color="#FF6B00" />
+                          <Text style={styles.coinText}>
+                            {user.default_coin_symbol}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.followButton,
+                    user.is_following && styles.followingButton,
+                    loadingFollows[user.id] && styles.buttonDisabled,
+                  ]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleFollow(user.id, user.is_following || false);
+                  }}
+                  disabled={loadingFollows[user.id]}
+                >
+                  {loadingFollows[user.id] ? (
+                    <ActivityIndicator size="small" color={user.is_following ? '#666' : '#fff'} />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.followButtonText,
+                        user.is_following && styles.followingButtonText,
+                      ]}
+                    >
+                      {user.is_following ? 'Following' : 'Follow'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
               </TouchableOpacity>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       )}
     </View>
@@ -297,10 +325,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    marginHorizontal: 24,
+    marginHorizontal: 16,
     marginBottom: 12,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   userInfo: {
     flexDirection: 'row',
@@ -308,9 +343,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#FF6B00',
     justifyContent: 'center',
     alignItems: 'center',
@@ -339,14 +374,10 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#1DA1F2',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  verifiedText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+    marginLeft: 4,
   },
   userHandle: {
     fontSize: 14,
@@ -362,8 +393,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
   },
+  coinBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fff3e0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
   coinText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#FF6B00',
   },

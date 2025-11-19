@@ -26,7 +26,7 @@ export function Sidebar() {
     { name: 'Bookmarks', icon: 'bookmark', path: '/(tabs)/feed' }, // TODO: Add bookmarks screen
     { name: 'Profile', icon: 'user', path: `/profile` },
     { name: 'Wallet', icon: 'credit-card', path: '/(tabs)/wallet' },
-    { name: 'Settings', icon: 'cog', path: '/(tabs)/feed' }, // TODO: Add settings screen
+    { name: 'Settings', icon: 'cog', path: '/(tabs)/settings' },
   ];
 
   const handleNavigate = (path: string) => {

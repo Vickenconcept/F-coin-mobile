@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -119,6 +119,18 @@ export default function UserProfileScreen() {
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [postToShare, setPostToShare] = useState<FeedPost | null>(null);
   
+  // Profile editing states
+  const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editLinks, setEditLinks] = useState<Array<{ id: string; label: string; url: string }>>([]);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'self' | 'unavailable' | 'error'>('idle');
+  const [usernameStatusMessage, setUsernameStatusMessage] = useState<string>('');
+  const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   // Post management states
   const [postUpdating, setPostUpdating] = useState<Record<string, boolean>>({});
   const [postDeleting, setPostDeleting] = useState<Record<string, boolean>>({});
@@ -177,6 +189,216 @@ export default function UserProfileScreen() {
     setRefreshing(true);
     fetchProfile();
   }, [fetchProfile]);
+
+  const openEditProfileModal = useCallback(() => {
+    if (!profile) return;
+    setEditDisplayName(profile.display_name || '');
+    setEditUsername(profile.username);
+    setEditBio(profile.profile_bio || '');
+    setEditLocation(profile.profile_location || '');
+    setEditLinks(
+      (profile.profile_links || []).map((link, index) => ({
+        id: `link-${index}`,
+        label: link.label || '',
+        url: link.url || '',
+      }))
+    );
+    setEditProfileModalVisible(true);
+    setUsernameStatus('idle');
+    setUsernameStatusMessage('');
+  }, [profile]);
+
+  const closeEditProfileModal = useCallback(() => {
+    setEditProfileModalVisible(false);
+    if (usernameCheckTimeoutRef.current) {
+      clearTimeout(usernameCheckTimeoutRef.current);
+    }
+  }, []);
+
+  // Username validation for edit modal
+  useEffect(() => {
+    if (!editProfileModalVisible) return;
+
+    const trimmed = editUsername.trim();
+    const originalUsername = profile?.username ?? '';
+
+    if (!trimmed) {
+      setUsernameStatus('unavailable');
+      setUsernameStatusMessage('Username is required.');
+      return;
+    }
+
+    if (trimmed === originalUsername) {
+      setUsernameStatus('idle');
+      setUsernameStatusMessage('');
+      return;
+    }
+
+    setUsernameStatus('checking');
+    setUsernameStatusMessage('');
+
+    if (usernameCheckTimeoutRef.current) {
+      clearTimeout(usernameCheckTimeoutRef.current);
+    }
+
+    usernameCheckTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await apiClient.get<{ id: string; username: string }>(
+          `/v1/users/lookup?username=${encodeURIComponent(trimmed)}`
+        );
+
+        if (editUsername.trim() !== trimmed) {
+          return;
+        }
+
+        if (response.ok && response.data) {
+          if (response.data.id === profile?.id) {
+            setUsernameStatus('self');
+            setUsernameStatusMessage('This is already your username.');
+          } else {
+            setUsernameStatus('unavailable');
+            setUsernameStatusMessage('That username is already taken.');
+          }
+        } else if (response.status === 404) {
+          setUsernameStatus('available');
+          setUsernameStatusMessage('Great — that username is available.');
+        } else {
+          setUsernameStatus('error');
+          setUsernameStatusMessage(response.errors?.[0]?.detail || 'Unable to verify username.');
+        }
+      } catch (error) {
+        console.error('Username lookup error:', error);
+        if (editUsername.trim() !== trimmed) {
+          return;
+        }
+        setUsernameStatus('error');
+        setUsernameStatusMessage('Unable to verify username right now.');
+      }
+    }, 400);
+
+    return () => {
+      if (usernameCheckTimeoutRef.current) {
+        clearTimeout(usernameCheckTimeoutRef.current);
+      }
+    };
+  }, [editUsername, profile?.id, profile?.username, editProfileModalVisible]);
+
+  const handleSaveProfile = useCallback(async () => {
+    if (!profile) return;
+
+    const trimmedUsername = editUsername.trim();
+    if (!trimmedUsername) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Username is required',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    if (
+      trimmedUsername !== profile.username &&
+      (usernameStatus === 'checking' || usernameStatus === 'unavailable' || usernameStatus === 'error')
+    ) {
+      const message =
+        usernameStatus === 'checking'
+          ? 'Please wait while we verify your username.'
+          : usernameStatusMessage || 'Choose a different username and try again.';
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: message,
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    setIsSavingProfile(true);
+
+    try {
+      const payload: Record<string, string | null | undefined | Array<{ label: string; url: string }>> = {};
+
+      const trimmedDisplayName = editDisplayName.trim();
+      const trimmedBio = editBio.trim();
+      const trimmedLocation = editLocation.trim();
+      const sanitizedLinks = editLinks
+        .map((link) => ({
+          label: link.label.trim(),
+          url: link.url.trim(),
+        }))
+        .filter((link) => link.label && link.url);
+
+      if (trimmedDisplayName !== (profile.display_name || '')) {
+        payload.display_name = trimmedDisplayName || null;
+      }
+
+      if (trimmedUsername !== profile.username) {
+        payload.username = trimmedUsername;
+      }
+
+      if (trimmedBio !== (profile.profile_bio || '')) {
+        payload.profile_bio = trimmedBio || null;
+      }
+
+      if (trimmedLocation !== (profile.profile_location || '')) {
+        payload.profile_location = trimmedLocation || null;
+      }
+
+      if (JSON.stringify(sanitizedLinks) !== JSON.stringify(profile.profile_links || [])) {
+        payload.profile_links = sanitizedLinks;
+      }
+
+      const response = await apiClient.patch('/v1/profile', payload);
+
+      if (!response.ok) {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail || 'Unable to update profile',
+          visibilityTime: 3000,
+        });
+        return;
+      }
+
+      // Refresh profile data
+      await fetchProfile();
+      closeEditProfileModal();
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Profile updated successfully',
+        visibilityTime: 2000,
+      });
+      setUsernameStatus('idle');
+      setUsernameStatusMessage('');
+    } catch (error) {
+      console.error('Update profile error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update profile',
+        visibilityTime: 3000,
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }, [profile, editDisplayName, editUsername, editBio, editLocation, editLinks, usernameStatus, usernameStatusMessage, fetchProfile, closeEditProfileModal]);
+
+  const handleAddLink = useCallback(() => {
+    if (editLinks.length >= 5) return;
+    setEditLinks((prev) => [...prev, { id: `link-${Date.now()}`, label: '', url: '' }]);
+  }, [editLinks.length]);
+
+  const handleLinkChange = useCallback((id: string, field: 'label' | 'url', value: string) => {
+    setEditLinks((prev) =>
+      prev.map((link) => (link.id === id ? { ...link, [field]: value } : link))
+    );
+  }, []);
+
+  const handleRemoveLink = useCallback((id: string) => {
+    setEditLinks((prev) => prev.filter((link) => link.id !== id));
+  }, []);
 
   const handleFollowToggle = useCallback(async () => {
     if (!profile || profile.is_current_user) return;
@@ -658,13 +880,13 @@ export default function UserProfileScreen() {
               )}
             </View>
             <Text style={styles.profileHandle}>@{profile.username}</Text>
-            {profile.profile_bio && (
-              <Text style={styles.profileBio}>{profile.profile_bio}</Text>
+            {profile.profile_bio && String(profile.profile_bio).trim() && (
+              <Text style={styles.profileBio}>{String(profile.profile_bio)}</Text>
             )}
-            {profile.profile_location && (
+            {profile.profile_location && String(profile.profile_location).trim() && (
               <View style={styles.profileMeta}>
                 <FontAwesome name="map-marker" size={14} color="#666" />
-                <Text style={styles.profileMetaText}>{profile.profile_location}</Text>
+                <Text style={styles.profileMetaText}>{String(profile.profile_location)}</Text>
               </View>
             )}
             {profile.profile_links && profile.profile_links.length > 0 && (
@@ -1091,6 +1313,190 @@ export default function UserProfileScreen() {
         lastScale={lastScale}
         lastTranslate={lastTranslate}
       />
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={editProfileModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeEditProfileModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <TouchableOpacity onPress={closeEditProfileModal}>
+                <FontAwesome name="times" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Display Name</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={editDisplayName}
+                  onChangeText={setEditDisplayName}
+                  placeholder="Display name"
+                  placeholderTextColor="#999"
+                  maxLength={120}
+                  editable={!isSavingProfile}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Username</Text>
+                <TextInput
+                  style={[
+                    styles.formInput,
+                    usernameStatus === 'available' && styles.formInputValid,
+                    (usernameStatus === 'unavailable' || usernameStatus === 'error') && styles.formInputInvalid,
+                  ]}
+                  value={editUsername}
+                  onChangeText={(text) => {
+                    const cleaned = text.replace(/[^a-zA-Z0-9_.]/g, '');
+                    setEditUsername(cleaned);
+                  }}
+                  placeholder="username"
+                  placeholderTextColor="#999"
+                  maxLength={50}
+                  autoCapitalize="none"
+                  editable={!isSavingProfile}
+                />
+                {usernameStatus === 'checking' && (
+                  <View style={styles.statusRow}>
+                    <ActivityIndicator size="small" color="#FF6B00" />
+                    <Text style={styles.statusText}>Checking availability...</Text>
+                  </View>
+                )}
+                {usernameStatus === 'available' && (
+                  <View style={styles.statusRow}>
+                    <FontAwesome name="check-circle" size={14} color="#25D366" />
+                    <Text style={[styles.statusText, styles.statusTextValid]}>
+                      {usernameStatusMessage}
+                    </Text>
+                  </View>
+                )}
+                {(usernameStatus === 'unavailable' || usernameStatus === 'error') && (
+                  <View style={styles.statusRow}>
+                    <FontAwesome name="times-circle" size={14} color="#E91E63" />
+                    <Text style={[styles.statusText, styles.statusTextInvalid]}>
+                      {usernameStatusMessage}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Bio</Text>
+                <TextInput
+                  style={[styles.formInput, styles.formTextArea]}
+                  value={editBio}
+                  onChangeText={setEditBio}
+                  placeholder="Tell fans about your community..."
+                  placeholderTextColor="#999"
+                  maxLength={1000}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  editable={!isSavingProfile}
+                />
+                <Text style={styles.charCount}>{editBio.length}/1000</Text>
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Location</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={editLocation}
+                  onChangeText={setEditLocation}
+                  placeholder="City, Country"
+                  placeholderTextColor="#999"
+                  maxLength={120}
+                  editable={!isSavingProfile}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <View style={styles.linksHeader}>
+                  <Text style={styles.formLabel}>Links</Text>
+                  {editLinks.length < 5 && (
+                    <TouchableOpacity
+                      style={styles.addLinkButton}
+                      onPress={handleAddLink}
+                      disabled={isSavingProfile}
+                    >
+                      <FontAwesome name="plus" size={14} color="#FF6B00" />
+                      <Text style={styles.addLinkText}>Add link</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {editLinks.length === 0 && (
+                  <Text style={styles.hintText}>Share your website or top socials</Text>
+                )}
+                {editLinks.map((link) => (
+                  <View key={link.id} style={styles.linkRow}>
+                    <TextInput
+                      style={[styles.formInput, styles.linkLabelInput]}
+                      value={link.label}
+                      onChangeText={(value) => handleLinkChange(link.id, 'label', value)}
+                      placeholder="Label (e.g., Website)"
+                      placeholderTextColor="#999"
+                      maxLength={40}
+                      editable={!isSavingProfile}
+                    />
+                    <TextInput
+                      style={[styles.formInput, styles.linkUrlInput]}
+                      value={link.url}
+                      onChangeText={(value) => handleLinkChange(link.id, 'url', value)}
+                      placeholder="https://example.com"
+                      placeholderTextColor="#999"
+                      maxLength={255}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                      editable={!isSavingProfile}
+                    />
+                    <TouchableOpacity
+                      style={styles.removeLinkButton}
+                      onPress={() => handleRemoveLink(link.id)}
+                      disabled={isSavingProfile}
+                    >
+                      <FontAwesome name="times" size={16} color="#999" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[
+                styles.modalSaveButton,
+                (isSavingProfile ||
+                  !editUsername.trim() ||
+                  (editUsername.trim() !== (profile?.username ?? '') &&
+                    (usernameStatus === 'checking' || usernameStatus === 'unavailable' || usernameStatus === 'error'))) &&
+                  styles.modalSaveButtonDisabled,
+              ]}
+              onPress={handleSaveProfile}
+              disabled={
+                isSavingProfile ||
+                !editUsername.trim() ||
+                (editUsername.trim() !== (profile?.username ?? '') &&
+                  (usernameStatus === 'checking' || usernameStatus === 'unavailable' || usernameStatus === 'error'))
+              }
+            >
+              {isSavingProfile ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.modalSaveButtonText}>Save Changes</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1635,6 +2041,98 @@ const styles = StyleSheet.create({
   },
   loadingSpinner: {
     padding: 40,
+  },
+  // Edit Profile Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  formInputValid: {
+    borderColor: '#25D366',
+  },
+  formInputInvalid: {
+    borderColor: '#E91E63',
+  },
+  formTextArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  hintText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  statusText: {
+    fontSize: 13,
+  },
+  statusTextValid: {
+    color: '#25D366',
+  },
+  statusTextInvalid: {
+    color: '#E91E63',
+  },
+  linksHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  addLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  addLinkText: {
+    fontSize: 13,
+    color: '#FF6B00',
+    fontWeight: '600',
+  },
+  linkRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  linkLabelInput: {
+    flex: 0.4,
+  },
+  linkUrlInput: {
+    flex: 0.55,
+  },
+  removeLinkButton: {
+    padding: 8,
+  },
+  modalSaveButton: {
+    backgroundColor: '#FF6B00',
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 16,
+    marginTop: 8,
+  },
+  modalSaveButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalSaveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 
