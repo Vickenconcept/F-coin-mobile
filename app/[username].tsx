@@ -14,6 +14,7 @@ import {
   Platform,
   Animated,
   TextInput,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -864,12 +865,18 @@ export default function UserProfileScreen() {
 
         {/* Profile Header */}
         <View style={styles.profileHeader}>
-          <Image
-            source={{
-              uri: profile.avatar_url || 'https://via.placeholder.com/80',
-            }}
-            style={styles.profileAvatar}
-          />
+          {profile.avatar_url ? (
+            <Image
+              source={{ uri: profile.avatar_url }}
+              style={styles.profileAvatar}
+            />
+          ) : (
+            <View style={styles.profileAvatarPlaceholder}>
+              <Text style={styles.profileAvatarText}>
+                {(profile.display_name || profile.username)?.[0]?.toUpperCase() || 'U'}
+              </Text>
+            </View>
+          )}
           <View style={styles.profileInfo}>
             <View style={styles.profileUsernameRow}>
               <Text style={styles.profileUsername}>
@@ -891,16 +898,62 @@ export default function UserProfileScreen() {
             )}
             {profile.profile_links && profile.profile_links.length > 0 && (
               <View style={styles.profileLinks}>
-                {profile.profile_links.map((link, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    onPress={() => {
-                      // Open link
-                    }}
-                  >
-                    <Text style={styles.profileLink}>{link.label || link.url}</Text>
-                  </TouchableOpacity>
-                ))}
+                {profile.profile_links.map((link, index) => {
+                  const url = link.url || '';
+                  const label = link.label || link.url || '';
+                  
+                  // Detect platform from URL
+                  const getPlatformIcon = (url: string): { name: keyof typeof FontAwesome.glyphMap; color: string } => {
+                    const lowerUrl = url.toLowerCase();
+                    if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.com')) {
+                      return { name: 'facebook', color: '#1877F2' };
+                    } else if (lowerUrl.includes('instagram.com') || lowerUrl.includes('ig.com')) {
+                      return { name: 'instagram', color: '#E4405F' };
+                    } else if (lowerUrl.includes('tiktok.com')) {
+                      return { name: 'music', color: '#000000' };
+                    } else if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+                      return { name: 'youtube', color: '#FF0000' };
+                    } else if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) {
+                      return { name: 'twitter', color: '#1DA1F2' };
+                    } else if (lowerUrl.includes('linkedin.com')) {
+                      return { name: 'linkedin', color: '#0077B5' };
+                    } else {
+                      return { name: 'link', color: '#666' };
+                    }
+                  };
+                  
+                  const platformIcon = getPlatformIcon(url);
+                  
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.profileLinkItem}
+                      onPress={() => {
+                        if (url) {
+                          Linking.openURL(url).catch((err: Error) => {
+                            console.error('Failed to open URL:', err);
+                            Toast.show({
+                              type: 'error',
+                              text1: 'Error',
+                              text2: 'Failed to open link',
+                              visibilityTime: 2000,
+                            });
+                          });
+                        }
+                      }}
+                    >
+                      <FontAwesome
+                        name={platformIcon.name}
+                        size={16}
+                        color={platformIcon.color}
+                        style={styles.profileLinkIcon}
+                      />
+                      <Text style={styles.profileLink} numberOfLines={1}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -1567,6 +1620,20 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     backgroundColor: '#f0f0f0',
+    overflow: 'hidden',
+  },
+  profileAvatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FF6B00',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileAvatarText: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: '600',
   },
   profileInfo: {
     flex: 1,
@@ -1611,9 +1678,23 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 8,
   },
+  profileLinkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 16,
+    maxWidth: '100%',
+  },
+  profileLinkIcon: {
+    marginRight: 2,
+  },
   profileLink: {
     fontSize: 14,
-    color: '#1DA1F2',
+    color: '#333',
+    flexShrink: 1,
   },
   statsContainer: {
     flexDirection: 'row',

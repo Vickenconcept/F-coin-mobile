@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../lib/apiClient';
@@ -14,6 +15,7 @@ import Toast from 'react-native-toast-message';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 type SocialAccount = {
   id: string;
@@ -24,12 +26,12 @@ type SocialAccount = {
   last_synced_at: string | null;
 };
 
-const PROVIDER_INFO: Record<string, { name: string; color: string; icon: string }> = {
-  facebook: { name: 'Facebook', color: '#1877F2', icon: '📘' },
-  instagram: { name: 'Instagram', color: '#E4405F', icon: '📷' },
-  tiktok: { name: 'TikTok', color: '#000000', icon: '🎵' },
-  youtube: { name: 'YouTube', color: '#FF0000', icon: '📺' },
-  tiktok_fan: { name: 'TikTok Fan', color: '#000000', icon: '👤' },
+const PROVIDER_INFO: Record<string, { name: string; color: string; icon: keyof typeof FontAwesome.glyphMap }> = {
+  facebook: { name: 'Facebook', color: '#1877F2', icon: 'facebook' },
+  instagram: { name: 'Instagram', color: '#E4405F', icon: 'instagram' },
+  tiktok: { name: 'TikTok', color: '#000000', icon: 'music' },
+  youtube: { name: 'YouTube', color: '#FF0000', icon: 'youtube' },
+  tiktok_fan: { name: 'TikTok Fan', color: '#000000', icon: 'user' },
 };
 
 export default function ProfileScreen() {
@@ -227,12 +229,19 @@ export default function ProfileScreen() {
       <View style={styles.content}>
         {/* User Info */}
         <View style={styles.userCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user?.name?.[0]?.toUpperCase() || 'U'}
-            </Text>
-          </View>
-          <Text style={styles.userName}>{user?.name || 'User'}</Text>
+          {user?.avatar_url ? (
+            <Image
+              source={{ uri: user.avatar_url }}
+              style={styles.avatar}
+            />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {(user?.display_name || user?.name || user?.username)?.[0]?.toUpperCase() || 'U'}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.userName}>{user?.display_name || user?.name || 'User'}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
           <View style={styles.roleBadge}>
             <Text style={styles.roleText}>{user?.role?.toUpperCase() || 'USER'}</Text>
@@ -262,7 +271,13 @@ export default function ProfileScreen() {
                   <View key={provider} style={styles.accountCard}>
                     <View style={styles.accountHeader}>
                       <View style={styles.accountInfo}>
-                        <Text style={styles.accountIcon}>{info.icon}</Text>
+                        <View style={[styles.accountIconContainer, { backgroundColor: `${info.color}20` }]}>
+                          <FontAwesome
+                            name={info.icon}
+                            size={24}
+                            color={info.color}
+                          />
+                        </View>
                         <View>
                           <Text style={styles.accountName}>{info.name}</Text>
                           {account ? (
@@ -276,7 +291,7 @@ export default function ProfileScreen() {
                       </View>
                       {account && (
                         <View style={styles.connectedBadge}>
-                          <Text style={styles.connectedText}>✓</Text>
+                          <FontAwesome name="check" size={14} color="#fff" />
                         </View>
                       )}
                     </View>
@@ -353,6 +368,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
+    overflow: 'hidden',
   },
   avatarText: {
     color: '#fff',
@@ -421,8 +437,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  accountIcon: {
-    fontSize: 24,
+  accountIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 12,
   },
   accountName: {

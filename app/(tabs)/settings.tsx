@@ -11,7 +11,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../lib/apiClient';
@@ -55,6 +57,8 @@ export default function SettingsScreen() {
   // Profile state
   const [displayName, setDisplayName] = useState(user?.display_name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url ?? '');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [profileBio, setProfileBio] = useState((user as any)?.profile_bio ?? '');
   const [profileLocation, setProfileLocation] = useState((user as any)?.profile_location ?? '');
   const [profileLinks, setProfileLinks] = useState<EditableProfileLink[]>(toEditableLinks((user as any)?.profile_links));
@@ -86,13 +90,14 @@ export default function SettingsScreen() {
     if (user) {
       setDisplayName(user.display_name ?? '');
       setUsername(user.username ?? '');
+      setAvatarUrl(user.avatar_url ?? '');
       setProfileBio((user as any)?.profile_bio ?? '');
       setProfileLocation((user as any)?.profile_location ?? '');
       setProfileLinks(toEditableLinks((user as any)?.profile_links));
       setUsernameStatus('idle');
       setUsernameStatusMessage('');
     }
-  }, [user?.display_name, user?.username, (user as any)?.profile_bio, (user as any)?.profile_location, (user as any)?.profile_links]);
+  }, [user?.display_name, user?.username, user?.avatar_url, (user as any)?.profile_bio, (user as any)?.profile_location, (user as any)?.profile_links]);
 
   // Track initial preferences to detect changes and prevent reversion
   const [initialNotificationPrefs, setInitialNotificationPrefs] = useState<NotificationPreferences | null>(null);
@@ -188,12 +193,14 @@ export default function SettingsScreen() {
   const hasProfileChanges = useCallback(() => {
     const originalDisplayName = user?.display_name ?? '';
     const originalUsername = user?.username ?? '';
+    const originalAvatarUrl = user?.avatar_url ?? '';
     const originalBio = (user as any)?.profile_bio ?? '';
     const originalLocation = (user as any)?.profile_location ?? '';
     const originalLinks = (user as any)?.profile_links ?? [];
 
     const trimmedDisplayName = displayName.trim();
     const trimmedUsername = username.trim();
+    const trimmedAvatarUrl = avatarUrl.trim();
     const trimmedBio = profileBio.trim();
     const trimmedLocation = profileLocation.trim();
     const sanitizedLinks = profileLinks
@@ -206,11 +213,12 @@ export default function SettingsScreen() {
     return (
       trimmedDisplayName !== originalDisplayName ||
       trimmedUsername !== originalUsername ||
+      trimmedAvatarUrl !== originalAvatarUrl ||
       trimmedBio !== originalBio ||
       trimmedLocation !== originalLocation ||
       JSON.stringify(sanitizedLinks) !== JSON.stringify(originalLinks)
     );
-  }, [user, displayName, username, profileBio, profileLocation, profileLinks]);
+  }, [user, displayName, username, avatarUrl, profileBio, profileLocation, profileLinks]);
 
   const handleSaveProfile = async () => {
     if (!hasProfileChanges()) {
@@ -257,6 +265,7 @@ export default function SettingsScreen() {
       const payload: Record<string, string | null | undefined | Array<{ label: string; url: string }>> = {};
 
       const trimmedDisplayName = displayName.trim();
+      const trimmedAvatarUrl = avatarUrl.trim();
       const trimmedBio = profileBio.trim();
       const trimmedLocation = profileLocation.trim();
       const sanitizedLinks = profileLinks
@@ -272,6 +281,10 @@ export default function SettingsScreen() {
 
       if (trimmedUsername !== (user?.username ?? '')) {
         payload.username = trimmedUsername;
+      }
+
+      if (trimmedAvatarUrl !== (user?.avatar_url ?? '')) {
+        payload.avatar_url = trimmedAvatarUrl || null;
       }
 
       if (trimmedBio !== ((user as any)?.profile_bio ?? '')) {
@@ -492,6 +505,150 @@ export default function SettingsScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Profile Information</Text>
                 
+                {/* Profile Image Upload */}
+                <View style={styles.avatarSection}>
+                  <View style={styles.avatarContainer}>
+                    {avatarUrl ? (
+                      <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <Text style={styles.avatarPlaceholderText}>
+                          {(displayName || username || 'FC').slice(0, 2).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    {isUploadingAvatar && (
+                      <View style={styles.avatarOverlay}>
+                        <ActivityIndicator size="small" color="#fff" />
+                      </View>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.avatarUploadButton}
+                    onPress={async () => {
+                      try {
+                        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                        if (!permissionResult.granted) {
+                          Toast.show({
+                            type: 'error',
+                            text1: 'Permission Required',
+                            text2: 'Please allow access to your media library',
+                            visibilityTime: 3000,
+                          });
+                          return;
+                        }
+
+                        const result = await ImagePicker.launchImageLibraryAsync({
+                          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                          allowsEditing: true,
+                          aspect: [1, 1],
+                          quality: 0.8,
+                        });
+
+                        if (!result.canceled && result.assets[0]) {
+                          const file = result.assets[0];
+                          if (file.fileSize && file.fileSize > 5 * 1024 * 1024) {
+                            Toast.show({
+                              type: 'error',
+                              text1: 'File Too Large',
+                              text2: 'Image size must be less than 5MB',
+                              visibilityTime: 3000,
+                            });
+                            return;
+                          }
+
+                          setIsUploadingAvatar(true);
+                          try {
+                            const formData = new FormData();
+                            formData.append('file', {
+                              uri: file.uri,
+                              type: 'image/jpeg',
+                              name: 'avatar.jpg',
+                            } as any);
+
+                            const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, '') || 'http://localhost:8000';
+                            const token = apiClient.getToken();
+                            const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
+                              method: 'POST',
+                              headers: {
+                                Authorization: `Bearer ${token}`,
+                                'Content-Type': 'multipart/form-data',
+                              },
+                              body: formData,
+                            });
+
+                            const data = await response.json();
+                            if (response.ok && data.data?.url) {
+                              setAvatarUrl(data.data.url);
+                              // Immediately save the avatar_url to the profile
+                              try {
+                                const saveResponse = await apiClient.patch('/v1/profile', {
+                                  avatar_url: data.data.url,
+                                });
+                                if (saveResponse.ok) {
+                                  await refreshUser();
+                                  Toast.show({
+                                    type: 'success',
+                                    text1: 'Success',
+                                    text2: 'Profile image uploaded and saved successfully',
+                                    visibilityTime: 2000,
+                                  });
+                                } else {
+                                  Toast.show({
+                                    type: 'error',
+                                    text1: 'Warning',
+                                    text2: 'Image uploaded but failed to save. Please try saving again.',
+                                    visibilityTime: 3000,
+                                  });
+                                }
+                              } catch (saveError) {
+                                console.error('Save avatar error:', saveError);
+                                Toast.show({
+                                  type: 'error',
+                                  text1: 'Warning',
+                                  text2: 'Image uploaded but failed to save. Please try saving again.',
+                                  visibilityTime: 3000,
+                                });
+                              }
+                            } else {
+                              Toast.show({
+                                type: 'error',
+                                text1: 'Error',
+                                text2: data.errors?.[0]?.detail || 'Failed to upload image',
+                                visibilityTime: 3000,
+                              });
+                            }
+                          } catch (error) {
+                            console.error('Avatar upload error:', error);
+                            Toast.show({
+                              type: 'error',
+                              text1: 'Error',
+                              text2: 'Failed to upload image',
+                              visibilityTime: 3000,
+                            });
+                          } finally {
+                            setIsUploadingAvatar(false);
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Image picker error:', error);
+                        Toast.show({
+                          type: 'error',
+                          text1: 'Error',
+                          text2: 'Failed to select image',
+                          visibilityTime: 3000,
+                        });
+                      }
+                    }}
+                    disabled={isUploadingAvatar}
+                  >
+                    <FontAwesome name="camera" size={16} color="#FF6B00" />
+                    <Text style={styles.avatarUploadButtonText}>
+                      {isUploadingAvatar ? 'Uploading...' : 'Change Photo'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Display Name</Text>
                   <TextInput
@@ -674,9 +831,13 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.previewCard}>
                   <View style={styles.previewAvatar}>
-                    <Text style={styles.previewAvatarText}>
-                      {(displayName || username || 'FC').slice(0, 2).toUpperCase()}
-                    </Text>
+                    {(avatarUrl || user?.avatar_url) ? (
+                      <Image source={{ uri: avatarUrl || user?.avatar_url || '' }} style={styles.previewAvatarImage} />
+                    ) : (
+                      <Text style={styles.previewAvatarText}>
+                        {(displayName || username || 'FC').slice(0, 2).toUpperCase()}
+                      </Text>
+                    )}
                   </View>
                   <View style={styles.previewInfo}>
                     <View style={styles.previewNameRow}>
@@ -1058,11 +1219,72 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  previewAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   previewAvatarText: {
     color: '#fff',
     fontSize: 20,
     fontWeight: '700',
+  },
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  avatarContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FF6B00',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarPlaceholderText: {
+    color: '#fff',
+    fontSize: 36,
+    fontWeight: '700',
+  },
+  avatarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FF6B00',
+    backgroundColor: '#fff',
+  },
+  avatarUploadButtonText: {
+    color: '#FF6B00',
+    fontSize: 14,
+    fontWeight: '600',
   },
   previewInfo: {
     flex: 1,

@@ -1,5 +1,4 @@
-import { StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, View, Text } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
@@ -576,7 +575,7 @@ const styles = StyleSheet.create({
   statCardValue: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#0F172A',
+    color: '#000',
     marginBottom: 4,
   },
   statCardValueWhite: {
@@ -591,7 +590,7 @@ const styles = StyleSheet.create({
   },
   statCardSubtextWhite: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(255, 255, 255, 0.95)',
   },
   sectionsContainer: {
     marginBottom: 24,
@@ -615,7 +614,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#000',
     flex: 1,
     marginRight: 8,
   },
@@ -658,7 +657,7 @@ const styles = StyleSheet.create({
   engagementFanName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#000',
     marginBottom: 4,
   },
   engagementText: {
@@ -763,7 +762,7 @@ const styles = StyleSheet.create({
   earnedCoinSymbol: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#000',
     marginBottom: 2,
   },
   earnedCoinCreator: {
@@ -852,7 +851,7 @@ const styles = StyleSheet.create({
   quickActionTitleOutline: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#000',
     marginBottom: 2,
   },
   quickActionSubtitleOutline: {

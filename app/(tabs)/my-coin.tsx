@@ -11,12 +11,14 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { apiClient } from '../../lib/apiClient';
 import Toast from 'react-native-toast-message';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 // @ts-ignore - expo-linear-gradient types
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -72,6 +74,11 @@ export default function MyCoinScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isTopUpModalVisible, setIsTopUpModalVisible] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<CreatorCoin | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState('');
+  const [isTopUpLoading, setIsTopUpLoading] = useState(false);
+  const [isLaunchCoinModalVisible, setIsLaunchCoinModalVisible] = useState(false);
+  const [newCoinSymbol, setNewCoinSymbol] = useState('');
+  const [isCreatingCoin, setIsCreatingCoin] = useState(false);
 
   const loadCoins = useCallback(async () => {
     setIsCoinsLoading(true);
@@ -222,7 +229,150 @@ export default function MyCoinScreen() {
 
   const openTopUpModal = (coin: CreatorCoin) => {
     setSelectedCoin(coin);
+    setTopUpAmount('');
     setIsTopUpModalVisible(true);
+  };
+
+  const handleTopUp = async () => {
+    if (!selectedCoin) return;
+
+    const amountValue = parseFloat(topUpAmount);
+    if (!topUpAmount || isNaN(amountValue) || amountValue <= 0) {
+      Toast.show({
+        type: 'error',
+        text1: 'Invalid Amount',
+        text2: 'Please enter a valid amount',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    if (amountValue < 1) {
+      Toast.show({
+        type: 'error',
+        text1: 'Minimum Amount',
+        text2: 'Minimum top-up amount is $1 USD',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    setIsTopUpLoading(true);
+    try {
+      // Use a valid HTTP URL for return_url (backend validation requires valid URL)
+      // Get the base URL from environment, removing /api suffix if present
+      const apiBaseUrl = 
+        Constants.expoConfig?.extra?.apiBaseUrl?.replace(/\/api\/?$/, '') ||
+        process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, '') ||
+        'http://localhost:8000';
+      const returnUrl = `${apiBaseUrl}/dashboard/my-coin?payment=success`;
+      const response = await apiClient.post<{ checkout_url: string }>('/v1/wallets/topups', {
+        amount: amountValue,
+        coin_symbol: selectedCoin.symbol,
+        return_url: returnUrl,
+      });
+
+      if (response.ok && response.data?.checkout_url) {
+        // Open Stripe checkout in browser
+        const canOpen = await Linking.canOpenURL(response.data.checkout_url);
+        if (canOpen) {
+          await Linking.openURL(response.data.checkout_url);
+          setIsTopUpModalVisible(false);
+          Toast.show({
+            type: 'info',
+            text1: 'Redirecting to Payment',
+            text2: 'Complete payment in the browser',
+            visibilityTime: 3000,
+          });
+        } else {
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: 'Unable to open payment page',
+            visibilityTime: 3000,
+          });
+        }
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail || 'Failed to create payment',
+          visibilityTime: 3000,
+        });
+      }
+    } catch (error) {
+      console.error('Top up error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Something went wrong. Please try again.',
+        visibilityTime: 3000,
+      });
+    } finally {
+      setIsTopUpLoading(false);
+    }
+  };
+
+  const handleCreateCoin = async () => {
+    const trimmedSymbol = newCoinSymbol.trim().toUpperCase();
+    
+    if (!trimmedSymbol) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Please enter a coin symbol',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    // Validate coin symbol format (uppercase letters and numbers only, max 10 chars)
+    const symbolRegex = /^[A-Z0-9]{1,10}$/;
+    if (!symbolRegex.test(trimmedSymbol)) {
+      Toast.show({
+        type: 'error',
+        text1: 'Invalid Symbol',
+        text2: 'Coin symbol must be 1-10 uppercase letters and numbers only',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
+    setIsCreatingCoin(true);
+    try {
+      const response = await apiClient.post('/v1/coins/create', {
+        coin_symbol: trimmedSymbol,
+      });
+
+      if (response.ok) {
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'Coin created successfully!',
+          visibilityTime: 3000,
+        });
+        setNewCoinSymbol('');
+        setIsLaunchCoinModalVisible(false);
+        await Promise.all([loadCoins(), refreshUser()]);
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail || 'Failed to create coin',
+          visibilityTime: 3000,
+        });
+      }
+    } catch (error) {
+      console.error('Create coin error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Something went wrong. Please try again.',
+        visibilityTime: 3000,
+      });
+    } finally {
+      setIsCreatingCoin(false);
+    }
   };
 
   return (
@@ -243,12 +393,8 @@ export default function MyCoinScreen() {
             <TouchableOpacity
               style={styles.launchButton}
               onPress={() => {
-                Toast.show({
-                  type: 'info',
-                  text1: 'Coming Soon',
-                  text2: 'Coin launch feature will be available soon',
-                  visibilityTime: 3000,
-                });
+                setNewCoinSymbol('');
+                setIsLaunchCoinModalVisible(true);
               }}
             >
               <FontAwesome name="money" size={20} color="#fff" />
@@ -290,20 +436,15 @@ export default function MyCoinScreen() {
                       </View>
                     </View>
                   </View>
-                  <View style={styles.primaryCoinActions}>
-                    <View style={styles.primaryCoinIcon}>
-                      <FontAwesome name="money" size={40} color="#fff" />
-                    </View>
-                    {primaryCoin && (
-                      <TouchableOpacity
-                        style={styles.fundButton}
-                        onPress={() => openTopUpModal(primaryCoin)}
-                      >
-                        <FontAwesome name="money" size={16} color="#FF6B00" />
-                        <Text style={styles.fundButtonText}>Fund {primaryCoin.symbol}</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                  {primaryCoin && (
+                    <TouchableOpacity
+                      style={styles.fundButton}
+                      onPress={() => openTopUpModal(primaryCoin)}
+                    >
+                      <FontAwesome name="money" size={16} color="#FF6B00" />
+                      <Text style={styles.fundButtonText}>Fund {primaryCoin.symbol}</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             </LinearGradient>
@@ -320,12 +461,8 @@ export default function MyCoinScreen() {
                 <TouchableOpacity
                   style={styles.createButton}
                   onPress={() => {
-                    Toast.show({
-                      type: 'info',
-                      text1: 'Coming Soon',
-                      text2: 'Create new coin feature will be available soon',
-                      visibilityTime: 3000,
-                    });
+                    setNewCoinSymbol('');
+                    setIsLaunchCoinModalVisible(true);
                   }}
                 >
                   <Text style={styles.createButtonText}>Create New Coin</Text>
@@ -511,30 +648,174 @@ export default function MyCoinScreen() {
         transparent={true}
         onRequestClose={() => setIsTopUpModalVisible(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        <TouchableOpacity
           style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsTopUpModalVisible(false)}
         >
-          <View style={styles.modalContent}>
+          <View
+            style={styles.modalContent}
+            onStartShouldSetResponder={() => true}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+            }}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Fund {selectedCoin?.symbol || 'Coin'}</Text>
               <TouchableOpacity onPress={() => setIsTopUpModalVisible(false)}>
                 <FontAwesome name="times" size={24} color="#000" />
               </TouchableOpacity>
             </View>
-            <View style={styles.modalBody}>
-              <Text style={styles.modalText}>
-                Top-up functionality will be available soon. You'll be able to fund your coin pool directly from here.
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.modalCloseButton}
-              onPress={() => setIsTopUpModalVisible(false)}
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={{ flex: 1 }}
             >
-              <Text style={styles.modalCloseButtonText}>Close</Text>
-            </TouchableOpacity>
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                <View style={styles.modalInputGroup}>
+                  <Text style={styles.modalLabel}>Amount (USD)</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={topUpAmount}
+                    onChangeText={(text) => {
+                      // Only allow numbers and one decimal point
+                      const cleaned = text.replace(/[^0-9.]/g, '');
+                      const parts = cleaned.split('.');
+                      if (parts.length > 2) return; // Only one decimal point
+                      if (parts[1] && parts[1].length > 2) return; // Max 2 decimal places
+                      setTopUpAmount(cleaned);
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="10.00"
+                    placeholderTextColor="#999"
+                    editable={!isTopUpLoading}
+                  />
+                  <Text style={styles.modalHint}>Minimum: $1.00 USD</Text>
+                </View>
+
+                {selectedCoin && topUpAmount && !isNaN(parseFloat(topUpAmount)) && parseFloat(topUpAmount) > 0 && (
+                  <View style={styles.modalSummary}>
+                    <View style={styles.modalSummaryRow}>
+                      <Text style={styles.modalSummaryLabel}>You will pay:</Text>
+                      <Text style={styles.modalSummaryValue}>${parseFloat(topUpAmount).toFixed(2)} USD</Text>
+                    </View>
+                    <View style={styles.modalSummaryRow}>
+                      <Text style={styles.modalSummaryLabel}>You will receive:</Text>
+                      <Text style={styles.modalSummaryValue}>
+                        {(parseFloat(topUpAmount) * conversionRate).toFixed(2)} {selectedCoin.symbol}
+                      </Text>
+                    </View>
+                    <View style={styles.modalSummaryRow}>
+                      <Text style={styles.modalSummarySubtext}>Conversion rate:</Text>
+                      <Text style={styles.modalSummarySubtext}>
+                        1 USD ≈ {conversionRate.toFixed(2)} {selectedCoin.symbol}
+                      </Text>
+                    </View>
+                    {primaryCoinValueUsd > 0 && (
+                      <View style={styles.modalSummaryRow}>
+                        <Text style={styles.modalSummarySubtext}>Coin value:</Text>
+                        <Text style={styles.modalSummarySubtext}>
+                          1 {selectedCoin.symbol} ≈ ${formatCoinValue(primaryCoinValueUsd)} USD
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity
+                    style={[styles.modalSubmitButton, (!topUpAmount || parseFloat(topUpAmount) < 1 || isTopUpLoading) && styles.modalSubmitButtonDisabled]}
+                    onPress={handleTopUp}
+                    disabled={!topUpAmount || parseFloat(topUpAmount) < 1 || isTopUpLoading}
+                    activeOpacity={0.7}
+                  >
+                    {isTopUpLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.modalSubmitButtonText}>Continue to Payment</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
           </View>
-        </KeyboardAvoidingView>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Launch Coin Modal */}
+      <Modal
+        visible={isLaunchCoinModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsLaunchCoinModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsLaunchCoinModalVisible(false)}
+        >
+          <View
+            style={styles.modalContent}
+            onStartShouldSetResponder={() => true}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+            }}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Your Coin</Text>
+              <TouchableOpacity onPress={() => setIsLaunchCoinModalVisible(false)}>
+                <FontAwesome name="times" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={{ flex: 1 }}
+            >
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                <View style={styles.modalInputGroup}>
+                  <Text style={styles.modalLabel}>Coin Symbol</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={newCoinSymbol}
+                    onChangeText={(text) => {
+                      // Only allow uppercase letters and numbers, max 10 chars
+                      const cleaned = text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+                      setNewCoinSymbol(cleaned);
+                    }}
+                    placeholder="e.g., SARAH, DAVID, MYCOIN"
+                    placeholderTextColor="#999"
+                    maxLength={10}
+                    editable={!isCreatingCoin}
+                    autoCapitalize="characters"
+                  />
+                  <Text style={styles.modalHint}>
+                    Choose a unique symbol for your coin (1-10 uppercase letters and numbers only)
+                  </Text>
+                </View>
+
+                <View style={styles.modalInfoBox}>
+                  <Text style={styles.modalInfoTitle}>Important</Text>
+                  <Text style={styles.modalInfoText}>
+                    • Coin symbols must be unique across all users{'\n'}
+                    • Once created, your coin symbol cannot be changed{'\n'}
+                    • Your coin symbol will be used to track distributions
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.modalSubmitButton, (!newCoinSymbol.trim() || isCreatingCoin) && styles.modalSubmitButtonDisabled]}
+                  onPress={handleCreateCoin}
+                  disabled={!newCoinSymbol.trim() || isCreatingCoin}
+                >
+                  {isCreatingCoin ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.modalSubmitButtonText}>Create Coin</Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </ScrollView>
   );
@@ -602,8 +883,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   primaryCoinHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
   },
   primaryCoinLabel: {
     fontSize: 14,
@@ -620,7 +900,8 @@ const styles = StyleSheet.create({
   primaryCoinStats: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: 12,
+    marginBottom: 16,
   },
   primaryCoinStat: {
     marginBottom: 8,
@@ -636,26 +917,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
-  primaryCoinActions: {
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  primaryCoinIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   fundButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 8,
     gap: 8,
+    marginTop: 8,
+    width: '100%',
+    maxWidth: 200,
   },
   fundButtonText: {
     color: '#FF6B00',
@@ -829,14 +1102,23 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 20,
     padding: 20,
-    maxHeight: '80%',
+    width: '100%',
+    maxWidth: 500,
+    minHeight: 450,
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -850,20 +1132,95 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   modalBody: {
+    flex: 1,
+  },
+  modalInputGroup: {
     marginBottom: 20,
   },
-  modalText: {
+  modalLabel: {
     fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#FFE5D4',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#000',
+    backgroundColor: '#fff',
+    marginBottom: 4,
+  },
+  modalHint: {
+    fontSize: 12,
+    color: '#999',
+  },
+  modalSummary: {
+    backgroundColor: '#FFF4ED',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#FFE5D4',
+  },
+  modalSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalSummaryLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  modalSummaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FF6B00',
+  },
+  modalSummarySubtext: {
+    fontSize: 12,
+    color: '#999',
+  },
+  modalInfoBox: {
+    backgroundColor: '#FFF4ED',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#FFE5D4',
+  },
+  modalInfoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 8,
+  },
+  modalInfoText: {
+    fontSize: 13,
     color: '#666',
     lineHeight: 20,
   },
-  modalCloseButton: {
+  modalButtonContainer: {
+    width: '100%',
+    marginTop: 8,
+  },
+  modalSubmitButton: {
     backgroundColor: '#FF6B00',
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    minHeight: 48,
   },
-  modalCloseButtonText: {
+  modalSubmitButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalSubmitButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',

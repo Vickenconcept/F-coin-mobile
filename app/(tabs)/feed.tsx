@@ -181,8 +181,7 @@ export default function FeedScreen() {
     if (params.openPost && posts.length > 0) {
       const post = posts.find((p) => p.id === params.openPost);
       if (post) {
-        setPostDetailPost(post);
-        setPostDetailModalVisible(true);
+        handleOpenPostDetail(post);
         // Clear the param to prevent reopening
         router.setParams({ openPost: undefined, commentId: undefined });
       }
@@ -195,12 +194,42 @@ export default function FeedScreen() {
   }, [loadFeed]);
 
   const handleLike = async (post: FeedPost) => {
+    // Optimistic update - update UI immediately
+    const newLikedState = !post.is_liked;
+    const newLikesCount = newLikedState ? post.likes_count + 1 : Math.max(0, post.likes_count - 1);
+
+    // Update in main feed immediately
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === post.id
+          ? {
+              ...p,
+              is_liked: newLikedState,
+              likes_count: newLikesCount,
+            }
+          : p
+      )
+    );
+    // Also update in post detail modal if it's the same post
+    if (postDetailPost && postDetailPost.id === post.id) {
+      setPostDetailPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              is_liked: newLikedState,
+              likes_count: newLikesCount,
+            }
+          : null
+      );
+    }
+
     try {
       const response = await apiClient.post<{ liked: boolean; likes_count: number }>(
         `/v1/feed/posts/${post.id}/like`
       );
 
       if (response.ok && response.data) {
+        // Update with actual server response
         setPosts((prev) =>
           prev.map((p) =>
             p.id === post.id
@@ -212,9 +241,80 @@ export default function FeedScreen() {
               : p
           )
         );
+        // Also update in post detail modal if it's the same post
+        if (postDetailPost && postDetailPost.id === post.id) {
+          setPostDetailPost((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  is_liked: response.data!.liked,
+                  likes_count: response.data!.likes_count,
+                }
+              : null
+          );
+        }
+      } else {
+        // Revert on error
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === post.id
+              ? {
+                  ...p,
+                  is_liked: post.is_liked,
+                  likes_count: post.likes_count,
+                }
+              : p
+          )
+        );
+        if (postDetailPost && postDetailPost.id === post.id) {
+          setPostDetailPost((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  is_liked: post.is_liked,
+                  likes_count: post.likes_count,
+                }
+              : null
+          );
+        }
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: 'Failed to like post',
+          visibilityTime: 2000,
+        });
       }
     } catch (error) {
       console.error('Like error:', error);
+      // Revert on error
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === post.id
+            ? {
+                ...p,
+                is_liked: post.is_liked,
+                likes_count: post.likes_count,
+              }
+            : p
+        )
+      );
+      if (postDetailPost && postDetailPost.id === post.id) {
+        setPostDetailPost((prev) =>
+          prev
+            ? {
+                ...prev,
+                is_liked: post.is_liked,
+                likes_count: post.likes_count,
+              }
+            : null
+        );
+      }
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to like post',
+        visibilityTime: 2000,
+      });
     }
   };
 
@@ -238,7 +338,8 @@ export default function FeedScreen() {
   };
 
   const handleSubmitComment = async (parentId?: string) => {
-    if (!selectedPost) return;
+    const post = selectedPost || postDetailPost;
+    if (!post) return;
 
     const content = parentId ? (replyContent[parentId] || '').trim() : newComment.trim();
     if (!content) return;
@@ -246,7 +347,7 @@ export default function FeedScreen() {
     setCommenting(true);
     try {
       const response = await apiClient.post<Comment>(
-        `/v1/feed/posts/${selectedPost.id}/comment`,
+        `/v1/feed/posts/${post.id}/comment`,
         { content, parent_id: parentId }
       );
 
@@ -271,13 +372,23 @@ export default function FeedScreen() {
           setComments((prev) => [newCommentData, ...prev]);
           setNewComment('');
         }
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === selectedPost.id
-              ? { ...p, comments_count: p.comments_count + 1 }
-              : p
-          )
-        );
+        // Update post comments count
+        if (selectedPost) {
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === selectedPost.id
+                ? { ...p, comments_count: p.comments_count + 1 }
+                : p
+            )
+          );
+        }
+        if (postDetailPost) {
+          setPostDetailPost((prev) =>
+            prev
+              ? { ...prev, comments_count: prev.comments_count + 1 }
+              : null
+          );
+        }
         Toast.show({
           type: 'success',
           text1: parentId ? 'Reply posted' : 'Comment posted',
@@ -305,28 +416,87 @@ export default function FeedScreen() {
   };
 
   const handleLikeComment = async (commentId: string) => {
-    if (!selectedPost) return;
+    const post = selectedPost || postDetailPost;
+    if (!post) return;
+
+    // Find the comment/reply to get current state
+    let targetComment: { is_liked: boolean; likes_count: number } | undefined;
+    
+    // First check if it's a top-level comment
+    const topLevelComment = comments.find((c) => c.id === commentId);
+    if (topLevelComment) {
+      targetComment = topLevelComment;
+    } else {
+      // If not found, check if it's a reply
+      for (const comment of comments) {
+        const reply = comment.replies?.find((r) => r.id === commentId);
+        if (reply) {
+          targetComment = reply;
+          break;
+        }
+      }
+    }
+
+    if (!targetComment) return;
+
+    // Optimistic update - update UI immediately
+    const newLikedState = !targetComment.is_liked;
+    const newLikesCount = newLikedState 
+      ? targetComment.likes_count + 1 
+      : Math.max(0, targetComment.likes_count - 1);
 
     setLikingComment(commentId);
+    
+    // Update immediately
+    setComments((prev) =>
+      prev.map((c) => {
+        if (c.id === commentId) {
+          // Top-level comment
+          return {
+            ...c,
+            is_liked: newLikedState,
+            likes_count: newLikesCount,
+          };
+        }
+        // Check if it's a reply in this comment
+        if (c.replies?.some((r) => r.id === commentId)) {
+          return {
+            ...c,
+            replies: (c.replies || []).map((reply) =>
+              reply.id === commentId
+                ? {
+                    ...reply,
+                    is_liked: newLikedState,
+                    likes_count: newLikesCount,
+                  }
+                : reply
+            ),
+          };
+        }
+        return c;
+      })
+    );
+
     try {
       const response = await apiClient.post<{ liked: boolean; likes_count: number }>(
-        `/v1/feed/posts/${selectedPost.id}/comments/${commentId}/like`
+        `/v1/feed/posts/${post.id}/comments/${commentId}/like`
       );
 
       if (response.ok && response.data) {
+        // Update with actual server response
         setComments((prev) =>
-          prev.map((comment) => {
-            if (comment.id === commentId) {
+          prev.map((c) => {
+            if (c.id === commentId) {
               return {
-                ...comment,
+                ...c,
                 is_liked: response.data!.liked,
                 likes_count: response.data!.likes_count,
               };
             }
             // Also update in replies
             return {
-              ...comment,
-              replies: comment.replies.map((reply) =>
+              ...c,
+              replies: (c.replies || []).map((reply) =>
                 reply.id === commentId
                   ? {
                       ...reply,
@@ -338,9 +508,64 @@ export default function FeedScreen() {
             };
           })
         );
+      } else {
+        // Revert on error
+        setComments((prev) =>
+          prev.map((c) => {
+            if (c.id === commentId) {
+              return {
+                ...c,
+                is_liked: targetComment.is_liked,
+                likes_count: targetComment.likes_count,
+              };
+            }
+            return {
+              ...c,
+              replies: (c.replies || []).map((reply) =>
+                reply.id === commentId
+                  ? {
+                      ...reply,
+                      is_liked: targetComment.is_liked,
+                      likes_count: targetComment.likes_count,
+                    }
+                  : reply
+              ),
+            };
+          })
+        );
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: 'Failed to like comment',
+          visibilityTime: 2000,
+        });
       }
     } catch (error) {
       console.error('Like comment error:', error);
+      // Revert on error
+      setComments((prev) =>
+        prev.map((c) => {
+          if (c.id === commentId) {
+            return {
+              ...c,
+              is_liked: targetComment.is_liked,
+              likes_count: targetComment.likes_count,
+            };
+          }
+          return {
+            ...c,
+            replies: (c.replies || []).map((reply) =>
+              reply.id === commentId
+                ? {
+                    ...reply,
+                    is_liked: targetComment.is_liked,
+                    likes_count: targetComment.likes_count,
+                  }
+                : reply
+            ),
+          };
+        })
+      );
       Toast.show({
         type: 'error',
         text1: 'Error',
@@ -361,7 +586,12 @@ export default function FeedScreen() {
         `/v1/feed/posts/${post.id}/comments`
       );
       if (response.ok && response.data) {
-        setComments(response.data);
+        // Ensure replies array is always present
+        const commentsWithReplies = response.data.map(comment => ({
+          ...comment,
+          replies: comment.replies || []
+        }));
+        setComments(commentsWithReplies);
       }
     } catch (error) {
       console.error('Load comments error:', error);
@@ -1861,7 +2091,82 @@ export default function FeedScreen() {
                                 <Text style={styles.commentActionText}>{comment.likes_count}</Text>
                               )}
                             </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.commentActionButton}
+                              onPress={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+                            >
+                              <FontAwesome name="reply" size={14} color="#666" />
+                              <Text style={styles.commentActionText}>Reply</Text>
+                            </TouchableOpacity>
                           </View>
+                          {/* Replies */}
+                          {comment.replies && comment.replies.length > 0 && (
+                            <View style={styles.repliesContainer}>
+                              {comment.replies.map((reply) => (
+                                <View key={reply.id} style={styles.replyItem}>
+                                  <Image
+                                    source={{
+                                      uri: reply.user.avatar_url || 'https://via.placeholder.com/24',
+                                    }}
+                                    style={styles.replyAvatar}
+                                  />
+                                  <View style={styles.replyContent}>
+                                    <Text style={styles.replyUsername}>
+                                      {reply.user.display_name || reply.user.username}
+                                    </Text>
+                                    <MentionText text={reply.content} style={styles.replyText} />
+                                    <View style={styles.commentActions}>
+                                      <Text style={styles.commentTime}>{formatTime(reply.created_at)}</Text>
+                                      <TouchableOpacity
+                                        style={styles.commentActionButton}
+                                        onPress={() => handleLikeComment(reply.id)}
+                                        disabled={likingComment === reply.id}
+                                      >
+                                        {likingComment === reply.id ? (
+                                          <ActivityIndicator size="small" color="#FF6B00" />
+                                        ) : (
+                                          <FontAwesome
+                                            name={reply.is_liked ? 'heart' : 'heart-o'}
+                                            size={14}
+                                            color={reply.is_liked ? '#FF6B00' : '#666'}
+                                          />
+                                        )}
+                                        {reply.likes_count > 0 && (
+                                          <Text style={styles.commentActionText}>{reply.likes_count}</Text>
+                                        )}
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
+                                </View>
+                              ))}
+                            </View>
+                          )}
+                          {/* Reply Input */}
+                          {replyingTo === comment.id && (
+                            <View style={styles.replyInputContainer}>
+                              <MentionInput
+                                value={replyContent[comment.id] || ''}
+                                onChangeText={(text) => setReplyContent((prev) => ({ ...prev, [comment.id]: text }))}
+                                placeholder={`Reply to ${comment.user.display_name || comment.user.username}...`}
+                                style={styles.replyInput}
+                                multiline
+                              />
+                              <TouchableOpacity
+                                style={[
+                                  styles.replySubmit,
+                                  (commenting || !replyContent[comment.id]?.trim()) && styles.replySubmitDisabled,
+                                ]}
+                                onPress={() => handleSubmitComment(comment.id)}
+                                disabled={commenting || !replyContent[comment.id]?.trim()}
+                              >
+                                {commenting ? (
+                                  <ActivityIndicator color="#FF6B00" size="small" />
+                                ) : (
+                                  <FontAwesome name="paper-plane" size={14} color="#fff" />
+                                )}
+                              </TouchableOpacity>
+                            </View>
+                          )}
                         </View>
                       </View>
                     ))
@@ -1892,12 +2197,7 @@ export default function FeedScreen() {
               />
               <TouchableOpacity
                 style={[styles.commentSubmit, commenting && styles.commentSubmitDisabled]}
-                onPress={() => {
-                  if (postDetailPost) {
-                    setSelectedPost(postDetailPost);
-                    handleSubmitComment();
-                  }
-                }}
+                onPress={() => handleSubmitComment()}
                 disabled={commenting || !newComment.trim()}
               >
                 {commenting ? (

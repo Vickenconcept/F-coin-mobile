@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useAuth } from '../context/AuthContext';
@@ -25,6 +25,7 @@ export function Sidebar() {
     { name: 'Messages', icon: 'envelope', path: '/(tabs)/feed' }, // TODO: Add messages screen
     { name: 'Bookmarks', icon: 'bookmark', path: '/(tabs)/feed' }, // TODO: Add bookmarks screen
     { name: 'Profile', icon: 'user', path: `/profile` },
+    { name: 'My Coin', icon: 'money', path: '/(tabs)/my-coin' },
     { name: 'Wallet', icon: 'credit-card', path: '/(tabs)/wallet' },
     { name: 'Settings', icon: 'cog', path: '/(tabs)/settings' },
   ];
@@ -99,12 +100,13 @@ export function Sidebar() {
           >
             <View style={styles.userAvatar}>
               {user.avatar_url ? (
-                <Text style={styles.userAvatarText}>
-                  {user.display_name?.[0]?.toUpperCase() || user.username[0]?.toUpperCase()}
-                </Text>
+                <Image
+                  source={{ uri: user.avatar_url }}
+                  style={styles.userAvatarImage}
+                />
               ) : (
                 <Text style={styles.userAvatarText}>
-                  {user.display_name?.[0]?.toUpperCase() || user.username[0]?.toUpperCase()}
+                  {user.display_name?.[0]?.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U'}
                 </Text>
               )}
             </View>
@@ -220,6 +222,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  userAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   userAvatarText: {
     color: '#fff',
