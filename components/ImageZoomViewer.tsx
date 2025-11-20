@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Modal,
@@ -11,8 +11,9 @@ import {
   PanResponder,
   ScrollView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { Video, ResizeMode, AVPlaybackStatusSuccess, AVPlaybackStatus } from 'expo-av';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -43,6 +44,17 @@ export function ImageZoomViewer({
   lastTranslate,
 }: ImageZoomViewerProps) {
   const scrollViewRef = useRef<ScrollView>(null);
+  const [videoLoadingStates, setVideoLoadingStates] = useState<Record<number, boolean>>({});
+  const videoRefs = useRef<Record<number, Video | null>>({});
+  const [videoPlaybackStatus, setVideoPlaybackStatus] = useState<Record<number, AVPlaybackStatusSuccess | null>>({});
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const getAnimatedValue = (value: Animated.Value) => {
+    if (typeof (value as any).__getValue === 'function') {
+      return (value as any).__getValue();
+    }
+    return (value as any)._value ?? 0;
+  };
 
   useEffect(() => {
     if (visible && scrollViewRef.current) {
@@ -50,8 +62,81 @@ export function ImageZoomViewer({
         x: initialIndex * SCREEN_WIDTH,
         animated: false,
       });
+      // Reset loading states when modal opens
+      setVideoLoadingStates({});
     }
   }, [visible, initialIndex]);
+
+  // Don't set loading state when switching - only show loading when actually loading
+
+  // Auto-hide controls after 3 seconds
+  useEffect(() => {
+    if (visible && media[initialIndex]?.type === 'video') {
+      setControlsVisible(true);
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      controlsTimeoutRef.current = setTimeout(() => {
+        setControlsVisible(false);
+      }, 3000);
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [visible, initialIndex, media]);
+
+  const togglePlayPause = async (index: number) => {
+    const video = videoRefs.current[index];
+    if (video) {
+      const status = videoPlaybackStatus[index];
+      if (status?.isLoaded) {
+        // If video ended, restart from beginning
+        if (status.didJustFinish) {
+          await video.setPositionAsync(0);
+          await video.playAsync();
+        } else if (status.isPlaying) {
+          await video.pauseAsync();
+        } else {
+          await video.playAsync();
+        }
+      }
+    }
+  };
+
+  const seekBackward = async (index: number) => {
+    const video = videoRefs.current[index];
+    if (video) {
+      const status = videoPlaybackStatus[index];
+      if (status?.isLoaded) {
+        const newPosition = Math.max(0, (status.positionMillis || 0) - 10000);
+        await video.setPositionAsync(newPosition);
+      }
+    }
+  };
+
+  const seekForward = async (index: number) => {
+    const video = videoRefs.current[index];
+    if (video) {
+      const status = videoPlaybackStatus[index];
+      if (status?.isLoaded) {
+        const duration = status.durationMillis || 0;
+        const newPosition = Math.min(duration, (status.positionMillis || 0) + 10000);
+        await video.setPositionAsync(newPosition);
+      }
+    }
+  };
+
+  const handleVideoTap = () => {
+    setControlsVisible(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    controlsTimeoutRef.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, 3000);
+  };
 
   const initialDistanceRef = useRef<number | null>(null);
   const initialScaleRef = useRef<number>(1);
@@ -136,9 +221,9 @@ export function ImageZoomViewer({
         imageScale.flattenOffset();
         imageTranslateX.flattenOffset();
         imageTranslateY.flattenOffset();
-        lastScale.value = imageScale._value;
-        lastTranslate.x = imageTranslateX._value;
-        lastTranslate.y = imageTranslateY._value;
+        lastScale.value = getAnimatedValue(imageScale);
+        lastTranslate.x = getAnimatedValue(imageTranslateX);
+        lastTranslate.y = getAnimatedValue(imageTranslateY);
         initialDistanceRef.current = null;
 
         // Reset if scale is too small
@@ -176,6 +261,19 @@ export function ImageZoomViewer({
           onMomentumScrollEnd={(e) => {
             const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
             onIndexChange(index);
+            // Show controls for new video (but don't set loading state - only show when actually loading)
+            if (media[index]?.type === 'video') {
+              setControlsVisible(true);
+              if (controlsTimeoutRef.current) {
+                clearTimeout(controlsTimeoutRef.current);
+              }
+              controlsTimeoutRef.current = setTimeout(() => {
+                setControlsVisible(false);
+              }, 3000);
+            } else {
+              // Hide controls when switching to image
+              setControlsVisible(false);
+            }
           }}
           scrollEnabled={lastScale.value <= 1.05} // Disable scroll when zoomed
           scrollEventThrottle={16}
@@ -204,13 +302,110 @@ export function ImageZoomViewer({
                   />
                 </Animated.View>
               ) : (
-                <Video
-                  source={{ uri: item.url }}
-                  style={styles.video}
-                  resizeMode={ResizeMode.CONTAIN}
-                  shouldPlay={index === initialIndex}
-                  useNativeControls
-                />
+                <TouchableOpacity
+                  style={styles.videoContainer}
+                  activeOpacity={1}
+                  onPress={handleVideoTap}
+                >
+                  {videoLoadingStates[index] && (
+                    <View style={styles.loadingOverlay}>
+                      <ActivityIndicator size="large" color="#fff" />
+                      <Text style={styles.loadingText}>Loading video...</Text>
+                    </View>
+                  )}
+                  <Video
+                    ref={(ref) => {
+                      videoRefs.current[index] = ref;
+                    }}
+                    source={{ uri: item.url }}
+                    style={styles.video}
+                    resizeMode={ResizeMode.CONTAIN}
+                    shouldPlay={index === initialIndex}
+                    onLoadStart={() => {
+                      setVideoLoadingStates((prev) => ({
+                        ...prev,
+                        [index]: true,
+                      }));
+                    }}
+                    onLoad={() => {
+                      setVideoLoadingStates((prev) => ({
+                        ...prev,
+                        [index]: false,
+                      }));
+                    }}
+                    onError={() => {
+                      setVideoLoadingStates((prev) => ({
+                        ...prev,
+                        [index]: false,
+                      }));
+                    }}
+                    onPlaybackStatusUpdate={(status) => {
+                      if (!status.isLoaded) {
+                        setVideoPlaybackStatus((prev) => ({
+                          ...prev,
+                          [index]: null,
+                        }));
+                        return;
+                      }
+                      setVideoPlaybackStatus((prev) => ({
+                        ...prev,
+                        [index]: status,
+                      }));
+                      // Hide loading when video is loaded and playing/ended
+                      if (status.isLoaded && (status.isPlaying || status.didJustFinish)) {
+                        setVideoLoadingStates((prev) => ({
+                          ...prev,
+                          [index]: false,
+                        }));
+                      }
+                      // Show controls when video ends
+                      if (status.didJustFinish) {
+                        setControlsVisible(true);
+                        if (controlsTimeoutRef.current) {
+                          clearTimeout(controlsTimeoutRef.current);
+                        }
+                        controlsTimeoutRef.current = setTimeout(() => {
+                          setControlsVisible(false);
+                        }, 5000); // Show controls longer when video ends
+                      }
+                    }}
+                  />
+                  {!videoLoadingStates[index] && controlsVisible && index === initialIndex && (
+                    <View style={styles.videoControls}>
+                      <TouchableOpacity
+                        style={styles.controlButton}
+                        onPress={() => seekBackward(index)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <FontAwesome name="backward" size={24} color="#fff" />
+                        <Text style={styles.controlButtonText}>10s</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.playPauseButton}
+                        onPress={() => togglePlayPause(index)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <FontAwesome
+                          name={
+                            videoPlaybackStatus[index]?.isLoaded && videoPlaybackStatus[index]?.isPlaying
+                              ? 'pause'
+                              : 'play'
+                          }
+                          size={32}
+                          color="#fff"
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.controlButton}
+                        onPress={() => seekForward(index)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <FontAwesome name="forward" size={24} color="#fff" />
+                        <Text style={styles.controlButtonText}>10s</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </TouchableOpacity>
               )}
             </View>
           ))}
@@ -259,9 +454,65 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
   },
+  videoContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
   video: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    zIndex: 1,
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 12,
+    fontWeight: '500',
+  },
+  videoControls: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 30,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    zIndex: 2,
+  },
+  playPauseButton: {
+    marginHorizontal: 30,
+    padding: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 35,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  controlButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 10,
+  },
+  controlButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '500',
   },
   indicator: {
     position: 'absolute',

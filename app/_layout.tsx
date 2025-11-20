@@ -9,6 +9,8 @@ import Toast from 'react-native-toast-message';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { SidebarProvider } from '../context/SidebarContext';
+import { GlobalSidebar } from '../components/GlobalSidebar';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -103,7 +105,10 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <SidebarProvider>
+        <RootLayoutNav />
+        <GlobalSidebar />
+      </SidebarProvider>
     </AuthProvider>
   );
 }

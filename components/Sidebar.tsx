@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../hooks/useNotifications';
+import { useSidebar } from '../context/SidebarContext';
 
 type SidebarItem = {
   name: string;
@@ -17,6 +18,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
+  const { closeSidebar } = useSidebar();
 
   const menuItems: SidebarItem[] = [
     { name: 'Home', icon: 'home', path: '/(tabs)/feed' },
@@ -31,6 +33,7 @@ export function Sidebar() {
   ];
 
   const handleNavigate = (path: string) => {
+    closeSidebar();
     if (path.includes('profile')) {
       router.push(`/profile`);
     } else {
@@ -87,7 +90,10 @@ export function Sidebar() {
         {/* Post Button */}
         <TouchableOpacity
           style={styles.postButton}
-          onPress={() => router.push('/(tabs)/feed')}
+          onPress={() => {
+            closeSidebar();
+            router.push('/(tabs)/feed');
+          }}
         >
           <Text style={styles.postButtonText}>Post</Text>
         </TouchableOpacity>
@@ -96,7 +102,10 @@ export function Sidebar() {
         {user && (
           <TouchableOpacity
             style={styles.userCard}
-            onPress={() => router.push('/profile')}
+            onPress={() => {
+              closeSidebar();
+              router.push('/profile');
+            }}
           >
             <View style={styles.userAvatar}>
               {user.avatar_url ? (
