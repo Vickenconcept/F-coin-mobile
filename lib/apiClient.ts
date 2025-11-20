@@ -21,6 +21,15 @@ const getApiBaseUrl = () => {
 };
 
 const API_BASE_URL = getApiBaseUrl();
+const IDEMPOTENT_METHODS = ['post', 'put', 'patch', 'delete'];
+
+const generateIdempotencyKey = (): string => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 export type ApiError = {
   title?: string;
@@ -57,9 +66,17 @@ class ApiClient {
     // Add request interceptor to include auth token
     this.client.interceptors.request.use(
       async (config) => {
+        config.headers = config.headers ?? {};
+        const method = (config.method ?? 'get').toLowerCase();
+
         if (this.token && !config.headers.Authorization) {
           config.headers.Authorization = `Bearer ${this.token}`;
         }
+
+        if (IDEMPOTENT_METHODS.includes(method) && !config.headers['Idempotency-Key']) {
+          config.headers['Idempotency-Key'] = generateIdempotencyKey();
+        }
+
         return config;
       },
       (error) => Promise.reject(error)
