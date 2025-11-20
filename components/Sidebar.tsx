@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image, DeviceEventEmitter } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useAuth } from '../context/AuthContext';
@@ -92,7 +92,14 @@ export function Sidebar() {
           style={styles.postButton}
           onPress={() => {
             closeSidebar();
-            router.push('/(tabs)/feed');
+            if (pathname === '/(tabs)/feed' || pathname === '/') {
+              DeviceEventEmitter.emit('openFeedComposer');
+            } else {
+              router.push({
+                pathname: '/(tabs)/feed',
+                params: { compose: 'true', trigger: Date.now().toString() },
+              } as any);
+            }
           }}
         >
           <Text style={styles.postButtonText}>Post</Text>

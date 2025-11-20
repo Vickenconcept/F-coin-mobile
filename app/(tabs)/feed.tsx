@@ -15,6 +15,7 @@ import {
   Dimensions,
   PanResponder,
   Animated,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { useAuth } from '../../context/AuthContext';
@@ -92,7 +93,7 @@ type Comment = {
 export default function FeedScreen() {
   const { user } = useAuth();
   const router = useRouter();
-  const params = useLocalSearchParams<{ openPost?: string; commentId?: string }>();
+const params = useLocalSearchParams<{ openPost?: string; commentId?: string; compose?: string; trigger?: string }>();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -187,6 +188,20 @@ export default function FeedScreen() {
       }
     }
   }, [params.openPost, posts, router]);
+
+  useEffect(() => {
+    if (params.compose) {
+      setComposerVisible(true);
+      router.replace('/(tabs)/feed');
+    }
+  }, [params.compose, router]);
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('openFeedComposer', () => {
+      setComposerVisible(true);
+    });
+    return () => subscription.remove();
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
