@@ -135,8 +135,14 @@ export default function UserProfileScreen() {
   const [followingList, setFollowingList] = useState<FollowEntry[]>([]);
   const [followersLoading, setFollowersLoading] = useState(false);
   const [followingLoading, setFollowingLoading] = useState(false);
+  const [followersLoadingMore, setFollowersLoadingMore] = useState(false);
+  const [followingLoadingMore, setFollowingLoadingMore] = useState(false);
   const [followersLoaded, setFollowersLoaded] = useState(false);
   const [followingLoaded, setFollowingLoaded] = useState(false);
+  const [followersPage, setFollowersPage] = useState(1);
+  const [followingPage, setFollowingPage] = useState(1);
+  const [followersHasMore, setFollowersHasMore] = useState(true);
+  const [followingHasMore, setFollowingHasMore] = useState(true);
   
   // Profile editing states
   const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
@@ -201,22 +207,46 @@ export default function UserProfileScreen() {
   }, [username, activeFilter]);
 
   const fetchFollowList = useCallback(
-    async (type: 'followers' | 'following') => {
+    async (
+      type: 'followers' | 'following',
+      options: { page?: number; append?: boolean } = {}
+    ) => {
       if (!profile) return;
+      const page = options.page ?? 1;
+      const append = options.append ?? page > 1;
       const userId = profile.id;
       const setList = type === 'followers' ? setFollowersList : setFollowingList;
       const setLoading = type === 'followers' ? setFollowersLoading : setFollowingLoading;
+      const setLoadingMore =
+        type === 'followers' ? setFollowersLoadingMore : setFollowingLoadingMore;
       const setLoaded = type === 'followers' ? setFollowersLoaded : setFollowingLoaded;
+      const setPage = type === 'followers' ? setFollowersPage : setFollowingPage;
+      const setHasMore = type === 'followers' ? setFollowersHasMore : setFollowingHasMore;
 
-      setLoading(true);
+      if (page === 1 && !append) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+
       try {
         const response = await apiClient.get<FollowEntry[]>(
-          `/v1/users/${userId}/${type}?per_page=50`
+          `/v1/users/${userId}/${type}?per_page=25&page=${page}`
         );
 
         if (response.ok && Array.isArray(response.data)) {
-          setList(response.data);
+          setList((prev) => (append ? [...prev, ...response.data!] : response.data!));
           setLoaded(true);
+          setPage(page);
+
+          const pagination = response.meta?.pagination as
+            | { current_page?: number; last_page?: number }
+            | undefined;
+          if (pagination?.current_page && pagination?.last_page) {
+            setHasMore(pagination.current_page < pagination.last_page);
+          } else {
+            setHasMore(response.data.length > 0);
+          }
         } else {
           Toast.show({
             type: 'error',
@@ -234,7 +264,11 @@ export default function UserProfileScreen() {
           visibilityTime: 3000,
         });
       } finally {
-        setLoading(false);
+        if (page === 1 && !append) {
+          setLoading(false);
+        } else {
+          setLoadingMore(false);
+        }
       }
     },
     [profile]
@@ -256,13 +290,23 @@ export default function UserProfileScreen() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     if (activeSection === 'posts') {
-      fetchProfile();
+      Promise.resolve(fetchProfile()).finally(() => setRefreshing(false));
       return;
     }
-    const listType = activeSection === 'followers' ? 'followers' : 'following';
-    Promise.resolve(fetchFollowList(listType)).finally(() => {
-      setRefreshing(false);
-    });
+
+    if (activeSection === 'followers') {
+      setFollowersPage(1);
+      setFollowersHasMore(true);
+      Promise.resolve(
+        fetchFollowList('followers', { page: 1, append: false })
+      ).finally(() => setRefreshing(false));
+    } else {
+      setFollowingPage(1);
+      setFollowingHasMore(true);
+      Promise.resolve(
+        fetchFollowList('following', { page: 1, append: false })
+      ).finally(() => setRefreshing(false));
+    }
   }, [activeSection, fetchFollowList, fetchProfile]);
 
   const openEditProfileModal = useCallback(() => {
@@ -854,6 +898,16 @@ export default function UserProfileScreen() {
     [fetchWalletCoins, user?.default_coin_symbol],
   );
 
+  const handleLoadMoreFollowers = useCallback(() => {
+    if (followersLoadingMore || !followersHasMore) return;
+    fetchFollowList('followers', { page: followersPage + 1, append: true });
+  }, [fetchFollowList, followersHasMore, followersLoadingMore, followersPage]);
+
+  const handleLoadMoreFollowing = useCallback(() => {
+    if (followingLoadingMore || !followingHasMore) return;
+    fetchFollowList('following', { page: followingPage + 1, append: true });
+  }, [fetchFollowList, followingHasMore, followingLoadingMore, followingPage]);
+
   const handleEnableRewardsSubmit = useCallback(async () => {
     if (!enableRewardsModalPost) return;
 
@@ -916,6 +970,9 @@ export default function UserProfileScreen() {
   const renderFollowList = (type: 'followers' | 'following') => {
     const entries = type === 'followers' ? followersList : followingList;
     const loading = type === 'followers' ? followersLoading : followingLoading;
+    const loadingMore = type === 'followers' ? followersLoadingMore : followingLoadingMore;
+    const hasMore = type === 'followers' ? followersHasMore : followingHasMore;
+    const handleLoadMore = type === 'followers' ? handleLoadMoreFollowers : handleLoadMoreFollowing;
     const emptyText = type === 'followers' ? 'No followers yet' : 'Not following anyone yet';
 
     if (loading && entries.length === 0) {
@@ -978,6 +1035,20 @@ export default function UserProfileScreen() {
             </TouchableOpacity>
           );
         })}
+        {hasMore && (
+          <TouchableOpacity
+            style={styles.loadMoreButton}
+            onPress={handleLoadMore}
+            activeOpacity={0.8}
+            disabled={loadingMore}
+          >
+            {loadingMore ? (
+              <ActivityIndicator size="small" color="#FF6B00" />
+            ) : (
+              <Text style={styles.loadMoreText}>Load more</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -1951,6 +2022,20 @@ const styles = StyleSheet.create({
   followListState: {
     padding: 40,
     alignItems: 'center',
+  },
+  loadMoreButton: {
+    marginTop: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+  },
+  loadMoreText: {
+    color: '#FF6B00',
+    fontWeight: '600',
+    fontSize: 14,
   },
   statNumber: {
     fontSize: 18,
