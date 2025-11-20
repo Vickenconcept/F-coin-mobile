@@ -97,6 +97,17 @@ type ProfileData = {
 };
 
 type FilterType = 'all' | 'rewards' | 'media';
+type ProfileSection = 'posts' | 'followers' | 'following';
+
+type FollowEntry = {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  verified_creator: boolean;
+  default_coin_symbol: string | null;
+  followed_at?: string | null;
+};
 
 export default function UserProfileScreen() {
   const { username } = useLocalSearchParams<{ username: string }>();
@@ -107,6 +118,7 @@ export default function UserProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [activeSection, setActiveSection] = useState<ProfileSection>('posts');
   const [refreshing, setRefreshing] = useState(false);
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
@@ -119,6 +131,12 @@ export default function UserProfileScreen() {
   const [lastTranslate] = useState({ x: 0, y: 0 });
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [postToShare, setPostToShare] = useState<FeedPost | null>(null);
+  const [followersList, setFollowersList] = useState<FollowEntry[]>([]);
+  const [followingList, setFollowingList] = useState<FollowEntry[]>([]);
+  const [followersLoading, setFollowersLoading] = useState(false);
+  const [followingLoading, setFollowingLoading] = useState(false);
+  const [followersLoaded, setFollowersLoaded] = useState(false);
+  const [followingLoaded, setFollowingLoaded] = useState(false);
   
   // Profile editing states
   const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
@@ -182,14 +200,70 @@ export default function UserProfileScreen() {
     }
   }, [username, activeFilter]);
 
+  const fetchFollowList = useCallback(
+    async (type: 'followers' | 'following') => {
+      if (!profile) return;
+      const userId = profile.id;
+      const setList = type === 'followers' ? setFollowersList : setFollowingList;
+      const setLoading = type === 'followers' ? setFollowersLoading : setFollowingLoading;
+      const setLoaded = type === 'followers' ? setFollowersLoaded : setFollowingLoaded;
+
+      setLoading(true);
+      try {
+        const response = await apiClient.get<FollowEntry[]>(
+          `/v1/users/${userId}/${type}?per_page=50`
+        );
+
+        if (response.ok && Array.isArray(response.data)) {
+          setList(response.data);
+          setLoaded(true);
+        } else {
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: 'Unable to load list right now.',
+            visibilityTime: 3000,
+          });
+        }
+      } catch (error) {
+        console.error(`[Profile] load ${type} error`, error);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: 'Unable to load list right now.',
+          visibilityTime: 3000,
+        });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [profile]
+  );
+
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
 
+  useEffect(() => {
+    if (activeSection === 'followers' && !followersLoaded) {
+      fetchFollowList('followers');
+    }
+    if (activeSection === 'following' && !followingLoaded) {
+      fetchFollowList('following');
+    }
+  }, [activeSection, followersLoaded, followingLoaded, fetchFollowList]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchProfile();
-  }, [fetchProfile]);
+    if (activeSection === 'posts') {
+      fetchProfile();
+      return;
+    }
+    const listType = activeSection === 'followers' ? 'followers' : 'following';
+    Promise.resolve(fetchFollowList(listType)).finally(() => {
+      setRefreshing(false);
+    });
+  }, [activeSection, fetchFollowList, fetchProfile]);
 
   const openEditProfileModal = useCallback(() => {
     if (!profile) return;
@@ -470,6 +544,19 @@ export default function UserProfileScreen() {
     if (hours < 24) return `${hours}h ago`;
     if (days < 7) return `${days}d ago`;
     return date.toLocaleDateString();
+  };
+
+  const formatFollowDate = (dateString?: string | null) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   };
 
   const handleLike = async (post: FeedPost) => {
@@ -826,6 +913,75 @@ export default function UserProfileScreen() {
     }
   }, [enableRewardsModalPost, enableRewardsForm, walletCoins, handlePostUpdate]);
 
+  const renderFollowList = (type: 'followers' | 'following') => {
+    const entries = type === 'followers' ? followersList : followingList;
+    const loading = type === 'followers' ? followersLoading : followingLoading;
+    const emptyText = type === 'followers' ? 'No followers yet' : 'Not following anyone yet';
+
+    if (loading && entries.length === 0) {
+      return (
+        <View style={styles.followListState}>
+          <ActivityIndicator size="large" color="#FF6B00" />
+          <Text style={styles.loadingText}>
+            Loading {type === 'followers' ? 'followers' : 'following'}...
+          </Text>
+        </View>
+      );
+    }
+
+    if (!entries.length) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>{emptyText}</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.followListContainer}>
+        {entries.map((entry) => {
+          const followedAt = formatFollowDate(entry.followed_at);
+          const metaPrefix =
+            type === 'followers' ? 'Following you since' : 'Following since';
+
+          return (
+            <TouchableOpacity
+              key={entry.id}
+              style={styles.followCard}
+              onPress={() => router.push(`/${entry.username}` as any)}
+              activeOpacity={0.8}
+            >
+              {entry.avatar_url ? (
+                <Image source={{ uri: entry.avatar_url }} style={styles.followAvatar} />
+              ) : (
+                <View style={styles.followAvatarPlaceholder}>
+                  <Text style={styles.followAvatarText}>
+                    {(entry.display_name || entry.username)?.[0]?.toUpperCase() || 'U'}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.followInfo}>
+                <View style={styles.followNameRow}>
+                  <Text style={styles.followName}>{entry.display_name || entry.username}</Text>
+                  {entry.verified_creator && (
+                    <FontAwesome name="check-circle" size={16} color="#1DA1F2" />
+                  )}
+                </View>
+                <Text style={styles.followHandle}>@{entry.username}</Text>
+                {followedAt ? (
+                  <Text style={styles.followMeta}>
+                    {metaPrefix} {followedAt}
+                  </Text>
+                ) : null}
+              </View>
+              <FontAwesome name="chevron-right" size={16} color="#999" />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
   if (isLoading) {
     return (
       <View style={styles.centerContainer}>
@@ -961,15 +1117,27 @@ export default function UserProfileScreen() {
 
         {/* Stats */}
         <View style={styles.statsContainer}>
-          <TouchableOpacity style={styles.statItem}>
+          <TouchableOpacity
+            style={[styles.statItem, activeSection === 'posts' && styles.statItemActive]}
+            onPress={() => setActiveSection('posts')}
+            activeOpacity={0.8}
+          >
             <Text style={styles.statNumber}>{profile.posts_count}</Text>
             <Text style={styles.statLabel}>Posts</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.statItem}>
+          <TouchableOpacity
+            style={[styles.statItem, activeSection === 'followers' && styles.statItemActive]}
+            onPress={() => setActiveSection('followers')}
+            activeOpacity={0.8}
+          >
             <Text style={styles.statNumber}>{profile.followers_count}</Text>
             <Text style={styles.statLabel}>Followers</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.statItem}>
+          <TouchableOpacity
+            style={[styles.statItem, activeSection === 'following' && styles.statItemActive]}
+            onPress={() => setActiveSection('following')}
+            activeOpacity={0.8}
+          >
             <Text style={styles.statNumber}>{profile.following_count}</Text>
             <Text style={styles.statLabel}>Following</Text>
           </TouchableOpacity>
@@ -1015,71 +1183,73 @@ export default function UserProfileScreen() {
           </View>
         )}
 
-        {/* Filter Tabs */}
-        <View style={styles.filterContainer}>
-          <TouchableOpacity
-            style={[styles.filterTab, activeFilter === 'all' && styles.filterTabActive]}
-            onPress={() => setActiveFilter('all')}
-          >
-            <Text
-              style={[styles.filterTabText, activeFilter === 'all' && styles.filterTabTextActive]}
-            >
-              All
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterTab, activeFilter === 'rewards' && styles.filterTabActive]}
-            onPress={() => setActiveFilter('rewards')}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                activeFilter === 'rewards' && styles.filterTabTextActive,
-              ]}
-            >
-              Rewards
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterTab, activeFilter === 'media' && styles.filterTabActive]}
-            onPress={() => setActiveFilter('media')}
-          >
-            <Text
-              style={[styles.filterTabText, activeFilter === 'media' && styles.filterTabTextActive]}
-            >
-              Media
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {activeSection === 'posts' ? (
+          <>
+            {/* Filter Tabs */}
+            <View style={styles.filterContainer}>
+              <TouchableOpacity
+                style={[styles.filterTab, activeFilter === 'all' && styles.filterTabActive]}
+                onPress={() => setActiveFilter('all')}
+              >
+                <Text
+                  style={[styles.filterTabText, activeFilter === 'all' && styles.filterTabTextActive]}
+                >
+                  All
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterTab, activeFilter === 'rewards' && styles.filterTabActive]}
+                onPress={() => setActiveFilter('rewards')}
+              >
+                <Text
+                  style={[
+                    styles.filterTabText,
+                    activeFilter === 'rewards' && styles.filterTabTextActive,
+                  ]}
+                >
+                  Rewards
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterTab, activeFilter === 'media' && styles.filterTabActive]}
+                onPress={() => setActiveFilter('media')}
+              >
+                <Text
+                  style={[styles.filterTabText, activeFilter === 'media' && styles.filterTabTextActive]}
+                >
+                  Media
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* Posts */}
-        {profile.recent_posts.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet</Text>
-          </View>
-        ) : (
-          profile.recent_posts.map((post) => (
-            <View key={post.id} style={styles.postCard}>
-              {/* Post Header */}
-              <View style={styles.postHeader}>
-                <Image
-                  source={{
-                    uri: post.user.avatar_url || 'https://via.placeholder.com/40',
-                  }}
-                  style={styles.avatar}
-                />
-                <View style={styles.postHeaderInfo}>
-                  <View style={styles.postUsernameContainer}>
-                    <Text style={styles.postUsername}>
-                      {post.user.display_name || post.user.username}
-                    </Text>
-                    {post.user.verified_creator && (
-                      <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
-                    )}
-                  </View>
-                  <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
-                </View>
+            {/* Posts */}
+            {profile.recent_posts.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No posts yet</Text>
               </View>
+            ) : (
+              profile.recent_posts.map((post) => (
+                <View key={post.id} style={styles.postCard}>
+                  {/* Post Header */}
+                  <View style={styles.postHeader}>
+                    <Image
+                      source={{
+                        uri: post.user.avatar_url || 'https://via.placeholder.com/40',
+                      }}
+                      style={styles.avatar}
+                    />
+                    <View style={styles.postHeaderInfo}>
+                      <View style={styles.postUsernameContainer}>
+                        <Text style={styles.postUsername}>
+                          {post.user.display_name || post.user.username}
+                        </Text>
+                        {post.user.verified_creator && (
+                          <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
+                        )}
+                      </View>
+                      <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
+                    </View>
+                  </View>
 
               {/* Share Header - if this is a shared post */}
               {post.shared_post && (
@@ -1332,8 +1502,14 @@ export default function UserProfileScreen() {
                   </View>
                 </View>
               )}
-            </View>
-          ))
+                </View>
+              ))
+            )}
+          </>
+        ) : activeSection === 'followers' ? (
+          renderFollowList('followers')
+        ) : (
+          renderFollowList('following')
         )}
       </ScrollView>
 
@@ -1706,6 +1882,74 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   statItem: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  statItemActive: {
+    backgroundColor: '#fff5ee',
+  },
+  followListContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  followCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    backgroundColor: '#fff',
+    marginBottom: 12,
+  },
+  followAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f0f0f0',
+  },
+  followAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FF6B00',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  followAvatarText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  followInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  followNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  followName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+  followHandle: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 2,
+  },
+  followMeta: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+  },
+  followListState: {
+    padding: 40,
     alignItems: 'center',
   },
   statNumber: {
