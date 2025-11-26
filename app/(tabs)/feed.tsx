@@ -161,7 +161,7 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
   const [lastScale] = useState({ value: 1 });
   const [lastTranslate] = useState({ x: 0, y: 0 });
 
-  const loadFeed = useCallback(async (page = 1, isRefresh = false) => {
+  const loadFeed = useCallback(async (page = 1, isRefresh = false, overrideSort?: 'newest' | 'popular' | 'new-first') => {
     console.log('Feed: loadFeed called', { page, isRefresh, sortBy: sortByRef.current });
 
     try {
@@ -172,14 +172,19 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
         setLoadingMore(true);
       }
 
+      const currentSort = overrideSort || sortByRef.current;
+      
       console.log('Feed: Making API request', { 
-        url: `/v1/feed?sort=${sortByRef.current}&per_page=20&page=${page}`,
-        sortBy: sortByRef.current,
-        page 
+        url: `/v1/feed?sort=${currentSort}&per_page=20&page=${page}`,
+        sortBy: currentSort,
+        overrideSort,
+        page,
+        isNewPostsLoad: overrideSort === 'new-first',
+        sortByRefCurrent: sortByRef.current
       });
 
       const response = await apiClient.get<FeedPost[]>(
-        `/v1/feed?sort=${sortByRef.current}&per_page=20&page=${page}`
+        `/v1/feed?sort=${currentSort}&per_page=20&page=${page}`
       );
 
       console.log('Feed: API response received', {
@@ -261,7 +266,7 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, []); // No dependencies to prevent infinite loops
+  }, []); // Empty dependencies - uses refs to avoid stale closures
 
   // Test connectivity on component mount
   useEffect(() => {
@@ -318,8 +323,20 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
 
   // Function to load new posts when user taps the "new posts" button
   const loadNewPosts = useCallback(async () => {
-    console.log('Feed: Loading new posts');
-    await loadFeed(1, true);
+    const timestamp = Date.now();
+    console.log(`🔥 NEW POSTS BUTTON CLICKED - ${timestamp}`);
+    console.log('Feed: Current sortBy ref:', sortByRef.current);
+    console.log('Feed: About to call loadFeed with new-first override');
+    
+    // Reset state immediately for UI feedback
+    setNewPostsCount(0);
+    setPosts([]); // Clear current posts to force refresh
+    setLoading(true);
+    
+    // Use regular loading (not refresh) to ensure proper state management
+    console.log(`🚀 Calling loadFeed with new-first - ${timestamp}`);
+    await loadFeed(1, false, 'new-first');
+    console.log(`✅ loadFeed with new-first completed - ${timestamp}`);
   }, []);
 
   // Set up background polling for new posts
@@ -1364,16 +1381,21 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
 
         {/* New Posts Notification */}
         {newPostsCount > 0 && (
-          <TouchableOpacity
-            style={styles.newPostsBubble}
-            onPress={loadNewPosts}
-            activeOpacity={0.8}
-          >
-            <FontAwesome name="arrow-up" size={16} color="#fff" />
-            <Text style={styles.newPostsText}>
-              {newPostsCount} new post{newPostsCount !== 1 ? 's' : ''}
+          <View style={styles.newPostsContainer}>
+            <TouchableOpacity
+              style={styles.newPostsBubble}
+              onPress={loadNewPosts}
+              activeOpacity={0.8}
+            >
+              <FontAwesome name="arrow-up" size={16} color="#fff" />
+              <Text style={styles.newPostsText}>
+                {newPostsCount} new post{newPostsCount !== 1 ? 's' : ''}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.newPostsHint}>
+              Tap to see new posts at the top
             </Text>
-          </TouchableOpacity>
+          </View>
         )}
 
         <TouchableOpacity
@@ -2553,6 +2575,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  newPostsContainer: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  newPostsHint: {
+    color: '#666',
+    fontSize: 11,
+    textAlign: 'center',
+    maxWidth: 200,
   },
   createButton: {
     width: 36,
