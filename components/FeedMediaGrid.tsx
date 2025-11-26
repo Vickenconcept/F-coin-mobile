@@ -1,24 +1,26 @@
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 type MediaItem = {
   id: string;
   type: 'image' | 'video';
   url: string;
-  thumbnail_url: string | null;
-  metadata: Record<string, unknown> | null;
+  thumbnail_url?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type FeedMediaGridProps = {
   media: MediaItem[];
   onOpen?: () => void;
   onImagePress?: (index: number) => void;
+  onRemove?: (index: number) => void;
 };
 
 const GRID_GAP = 4;
 
-export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProps) {
+export function FeedMediaGrid({ media, onOpen, onImagePress, onRemove }: FeedMediaGridProps) {
   if (!media || media.length === 0) return null;
 
   const total = media.length;
@@ -114,13 +116,26 @@ export function FeedMediaGrid({ media, onOpen, onImagePress }: FeedMediaGridProp
             </View>
           </View>
         )}
+        {onRemove && (
+          <TouchableOpacity
+            style={styles.removeButton}
+            onPress={() => onRemove(index)}
+            hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+          >
+            <FontAwesome name="times-circle" size={20} color="#fff" />
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
     );
   };
 
   return (
     <View style={[styles.container, layout.container]}>
-      {displayMedias.map((item, index) => renderMediaItem(item, index))}
+      {displayMedias.map((item, index) => (
+        <React.Fragment key={item.id || index}>
+          {renderMediaItem(item, index)}
+        </React.Fragment>
+      ))}
     </View>
   );
 }
@@ -167,6 +182,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     marginTop: 4,
+  },
+  removeButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 10,
+    padding: 2,
+    zIndex: 1,
   },
 });
 
