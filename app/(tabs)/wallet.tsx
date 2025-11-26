@@ -17,6 +17,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { apiClient } from '../../lib/apiClient';
 import Toast from 'react-native-toast-message';
 import { useAuth } from '../../context/AuthContext';
+import WithdrawalModal from '../../components/WithdrawalModal';
 
 type WalletCoinBalance = {
   coin_symbol: string;
@@ -35,6 +36,21 @@ type Transaction = {
   balance_before: number;
   balance_after: number;
   reference?: string | null;
+  created_at: string;
+};
+
+type Withdrawal = {
+  id: string;
+  coin_symbol: string;
+  coin_amount: number;
+  usd_amount: number;
+  ngn_amount: number;
+  fee_amount: number;
+  final_amount: number;
+  bank_name: string;
+  account_number: string;
+  account_name: string;
+  status: string;
   created_at: string;
 };
 
@@ -60,10 +76,15 @@ export default function WalletScreen() {
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'balances' | 'transactions' | 'send'>('balances');
+  const [activeTab, setActiveTab] = useState<'balances' | 'transactions' | 'send' | 'withdraw'>('balances');
   
   // Send/Transfer states
   const [isSendModalVisible, setIsSendModalVisible] = useState(false);
+  
+  // Withdrawal states
+  const [isWithdrawalModalVisible, setIsWithdrawalModalVisible] = useState(false);
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [isLoadingWithdrawals, setIsLoadingWithdrawals] = useState(false);
   const [transferUsername, setTransferUsername] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [transferCoinSymbol, setTransferCoinSymbol] = useState('FCN');
@@ -72,7 +93,7 @@ export default function WalletScreen() {
   const [usernameCheck, setUsernameCheck] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
   const [usernameInfo, setUsernameInfo] = useState<UsernameLookupResult | null>(null);
   const [usernameError, setUsernameError] = useState<string | null>(null);
-  const usernameCheckTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const usernameCheckTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchWallet = useCallback(async () => {
     setIsLoading(true);
@@ -110,14 +131,68 @@ export default function WalletScreen() {
     }
   }, []);
 
+  const fetchWithdrawalHistory = useCallback(async () => {
+    setIsLoadingWithdrawals(true);
+    try {
+      const response = await apiClient.get<{withdrawals: Withdrawal[]}>('/v1/withdrawals');
+      console.log('Withdrawal history response:', response);
+      
+      if (response.ok && response.data) {
+        // Check if response.data is an array directly or nested under 'withdrawals'
+        const withdrawalsArray = Array.isArray(response.data) 
+          ? response.data 
+          : response.data.withdrawals;
+          
+        console.log('Withdrawals array:', withdrawalsArray);
+        
+        if (Array.isArray(withdrawalsArray)) {
+          setWithdrawals(withdrawalsArray);
+        } else {
+          console.warn('Invalid withdrawals data structure:', withdrawalsArray);
+          setWithdrawals([]);
+        }
+      } else {
+        console.warn('Invalid withdrawal response:', response);
+        setWithdrawals([]);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail || 'Failed to load withdrawal history',
+          visibilityTime: 3000,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching withdrawal history:', error);
+      setWithdrawals([]);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Unable to load withdrawal history',
+        visibilityTime: 3000,
+      });
+    } finally {
+      setIsLoadingWithdrawals(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchWallet();
   }, [fetchWallet]);
 
+  // Fetch withdrawal history when withdraw tab is active
+  useEffect(() => {
+    if (activeTab === 'withdraw') {
+      fetchWithdrawalHistory();
+    }
+  }, [activeTab, fetchWithdrawalHistory]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchWallet();
-  }, [fetchWallet]);
+    if (activeTab === 'withdraw') {
+      await fetchWithdrawalHistory();
+    }
+  }, [fetchWallet, fetchWithdrawalHistory, activeTab]);
 
   // Username validation
   useEffect(() => {
@@ -412,6 +487,14 @@ export default function WalletScreen() {
               Send
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'withdraw' && styles.tabActive]}
+            onPress={() => setActiveTab('withdraw')}
+          >
+            <Text style={[styles.tabText, activeTab === 'withdraw' && styles.tabTextActive]}>
+              Withdraw
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Tab Content */}
@@ -419,7 +502,7 @@ export default function WalletScreen() {
           <View style={styles.tabContent}>
             {wallet.coin_balances.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <FontAwesome name="wallet" size={64} color="#ccc" />
+                <FontAwesome name="money" size={64} color="#ccc" />
                 <Text style={styles.emptyText}>No coins in wallet</Text>
                 <Text style={styles.emptySubtext}>Start earning or top up to add coins</Text>
               </View>
@@ -428,7 +511,7 @@ export default function WalletScreen() {
                 <View key={balance.coin_symbol} style={styles.balanceCard}>
                   <View style={styles.balanceHeader}>
                     <View style={styles.coinIcon}>
-                      <FontAwesome name="coins" size={24} color="#FF6B00" />
+                      <FontAwesome name="money" size={24} color="#FF6B00" />
                     </View>
                     <View style={styles.balanceInfo}>
                       <Text style={styles.coinSymbol}>{balance.coin_symbol}</Text>
@@ -508,6 +591,115 @@ export default function WalletScreen() {
             <Text style={styles.sendInfoText}>
               Send coins to other users by entering their username
             </Text>
+          </View>
+        )}
+
+        {activeTab === 'withdraw' && (
+          <View style={styles.tabContent}>
+            <TouchableOpacity
+              style={styles.withdrawButton}
+              onPress={() => setIsWithdrawalModalVisible(true)}
+            >
+              <FontAwesome name="bank" size={20} color="#fff" />
+              <Text style={styles.withdrawButtonText}>Withdraw to Bank</Text>
+            </TouchableOpacity>
+            <Text style={styles.withdrawInfoText}>
+              Convert your coins to cash and withdraw to your Nigerian bank account
+            </Text>
+            
+            {/* Quick Stats */}
+            <View style={styles.withdrawStatsContainer}>
+              <View style={styles.withdrawStat}>
+                <FontAwesome name="clock-o" size={16} color="#FF6B00" />
+                <Text style={styles.withdrawStatText}>Instant Transfer</Text>
+              </View>
+              <View style={styles.withdrawStat}>
+                <FontAwesome name="shield" size={16} color="#FF6B00" />
+                <Text style={styles.withdrawStatText}>Secure & Safe</Text>
+              </View>
+              <View style={styles.withdrawStat}>
+                <FontAwesome name="money" size={16} color="#FF6B00" />
+                <Text style={styles.withdrawStatText}>Low Fees</Text>
+              </View>
+            </View>
+
+            {/* Withdrawal History */}
+            <View style={styles.withdrawalHistoryContainer}>
+              <View style={styles.withdrawalHistoryHeader}>
+                <FontAwesome name="history" size={18} color="#333" />
+                <Text style={styles.withdrawalHistoryTitle}>Withdrawal History</Text>
+              </View>
+              
+              {isLoadingWithdrawals ? (
+                <View style={styles.withdrawalHistoryLoading}>
+                  <ActivityIndicator size="small" color="#FF6B00" />
+                  <Text style={styles.withdrawalHistoryLoadingText}>Loading withdrawals...</Text>
+                </View>
+              ) : (!Array.isArray(withdrawals) || withdrawals.length === 0) ? (
+                <View style={styles.withdrawalHistoryEmpty}>
+                  <FontAwesome name="bank" size={32} color="#ccc" />
+                  <Text style={styles.withdrawalHistoryEmptyTitle}>No withdrawals yet</Text>
+                  <Text style={styles.withdrawalHistoryEmptyText}>Your withdrawal history will appear here</Text>
+                </View>
+              ) : (
+                <View style={styles.withdrawalHistoryList}>
+                  {(Array.isArray(withdrawals) ? withdrawals : []).slice(0, 5).map((withdrawal) => {
+                    const status = withdrawal.status.toUpperCase();
+                    const amount = withdrawal.final_amount;
+                    const coinAmount = withdrawal.coin_amount;
+                    const timestamp = new Date(withdrawal.created_at).toLocaleDateString();
+
+                    const statusColor = (() => {
+                      switch (status) {
+                        case 'SUCCESS':
+                          return '#10B981';
+                        case 'PENDING':
+                        case 'PROCESSING':
+                          return '#F59E0B';
+                        case 'FAILED':
+                        case 'CANCELLED':
+                          return '#EF4444';
+                        default:
+                          return '#6B7280';
+                      }
+                    })();
+
+                    return (
+                      <View key={withdrawal.id} style={styles.withdrawalHistoryItem}>
+                        <View style={styles.withdrawalHistoryItemHeader}>
+                          <View style={styles.withdrawalHistoryItemInfo}>
+                            <Text style={styles.withdrawalHistoryItemAmount}>
+                              ₦{amount.toLocaleString()}
+                            </Text>
+                            <Text style={styles.withdrawalHistoryItemCoin}>
+                              {coinAmount} {withdrawal.coin_symbol}
+                            </Text>
+                          </View>
+                          <View style={[styles.withdrawalHistoryItemStatus, { backgroundColor: statusColor }]}>
+                            <Text style={styles.withdrawalHistoryItemStatusText}>{status}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.withdrawalHistoryItemDetails}>
+                          <Text style={styles.withdrawalHistoryItemBank}>
+                            {withdrawal.bank_name} • {withdrawal.account_number}
+                          </Text>
+                          <Text style={styles.withdrawalHistoryItemDate}>{timestamp}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                  
+                  {(Array.isArray(withdrawals) ? withdrawals : []).length > 5 && (
+                    <TouchableOpacity style={styles.withdrawalHistoryViewAll}>
+                      <Text style={styles.withdrawalHistoryViewAllText}>
+                        View all {(Array.isArray(withdrawals) ? withdrawals : []).length} withdrawals
+                      </Text>
+                      <FontAwesome name="chevron-right" size={12} color="#FF6B00" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -683,6 +875,17 @@ export default function WalletScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Withdrawal Modal */}
+      <WithdrawalModal
+        visible={isWithdrawalModalVisible}
+        onClose={() => setIsWithdrawalModalVisible(false)}
+        coinBalances={wallet?.coin_balances || []}
+        onWithdrawalSuccess={() => {
+          fetchWallet();
+          fetchWithdrawalHistory();
+        }}
+      />
     </View>
   );
 }
@@ -937,6 +1140,163 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  withdrawButton: {
+    backgroundColor: '#25D366',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  withdrawButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  withdrawInfoText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  withdrawStatsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  withdrawStat: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  withdrawStatText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  withdrawalHistoryContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  withdrawalHistoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  withdrawalHistoryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  withdrawalHistoryLoading: {
+    alignItems: 'center',
+    padding: 20,
+    gap: 8,
+  },
+  withdrawalHistoryLoadingText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  withdrawalHistoryEmpty: {
+    alignItems: 'center',
+    padding: 32,
+    gap: 8,
+  },
+  withdrawalHistoryEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#666',
+    marginTop: 8,
+  },
+  withdrawalHistoryEmptyText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+  },
+  withdrawalHistoryList: {
+    gap: 12,
+  },
+  withdrawalHistoryItem: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FF6B00',
+  },
+  withdrawalHistoryItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  withdrawalHistoryItemInfo: {
+    flex: 1,
+  },
+  withdrawalHistoryItemAmount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  withdrawalHistoryItemCoin: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  withdrawalHistoryItemStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  withdrawalHistoryItemStatusText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#fff',
+    textTransform: 'uppercase',
+  },
+  withdrawalHistoryItemDetails: {
+    gap: 2,
+  },
+  withdrawalHistoryItemBank: {
+    fontSize: 13,
+    color: '#666',
+  },
+  withdrawalHistoryItemDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+  withdrawalHistoryViewAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  withdrawalHistoryViewAllText: {
+    fontSize: 14,
+    color: '#FF6B00',
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,

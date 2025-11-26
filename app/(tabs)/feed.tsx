@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   ScrollView,
+  FlatList,
   View,
   Text,
   Image,
@@ -98,6 +99,11 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [posting, setPosting] = useState(false);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMorePages, setHasMorePages] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [composerVisible, setComposerVisible] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [postCreationStep, setPostCreationStep] = useState<1 | 2 | 3>(1);
@@ -145,14 +151,44 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
   const [lastScale] = useState({ value: 1 });
   const [lastTranslate] = useState({ x: 0, y: 0 });
 
-  const loadFeed = useCallback(async () => {
+  const loadFeed = useCallback(async (page = 1, isRefresh = false) => {
     try {
-      const response = await apiClient.get<FeedPost[]>(
-        `/v1/feed?sort=${sortBy}&per_page=20`
-      );
+      if (page === 1) {
+        isRefresh ? setRefreshing(true) : setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+
+      const response = await apiClient.get<{
+        data: FeedPost[];
+        meta: {
+          current_page: number;
+          last_page: number;
+          per_page: number;
+          total: number;
+        };
+      }>(`/v1/feed?sort=${sortBy}&per_page=20&page=${page}`);
 
       if (response.ok && response.data) {
-        setPosts(response.data);
+        const newPosts = response.data.data || [];
+        const meta = response.data.meta;
+        
+        if (page === 1) {
+          setPosts(newPosts);
+        } else {
+          setPosts(prevPosts => [...prevPosts, ...newPosts]);
+        }
+        
+        setCurrentPage(meta.current_page);
+        setHasMorePages(meta.current_page < meta.last_page);
+        
+        console.log('Feed loaded:', {
+          page: meta.current_page,
+          lastPage: meta.last_page,
+          hasMore: meta.current_page < meta.last_page,
+          postsCount: newPosts.length,
+          totalPosts: posts.length + newPosts.length
+        });
       } else {
         Toast.show({
           type: 'error',
@@ -170,12 +206,22 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingMore(false);
     }
-  }, [sortBy]);
+  }, [sortBy, posts.length]);
 
   useEffect(() => {
-    loadFeed();
-  }, [loadFeed]);
+    loadFeed(1);
+  }, [sortBy]);
+
+  // Load more posts when reaching the end
+  const loadMorePosts = useCallback(async () => {
+    if (!loadingMore && hasMorePages && !loading) {
+      console.log('Loading more posts, current page:', currentPage);
+      await loadFeed(currentPage + 1);
+    }
+  }, [loadFeed, loadingMore, hasMorePages, loading, currentPage]);
+
 
   // Handle deep link to open specific post from notifications
   useEffect(() => {
@@ -204,8 +250,9 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
   }, []);
 
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    loadFeed();
+    setCurrentPage(1);
+    setHasMorePages(true);
+    loadFeed(1, true);
   }, [loadFeed]);
 
   const handleLike = async (post: FeedPost) => {
@@ -948,6 +995,230 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
     return date.toLocaleDateString();
   };
 
+  // Render individual post item
+  const renderPost = useCallback(({ item: post }: { item: FeedPost }) => (
+    <View key={post.id} style={styles.postCard}>
+      {/* Post Header */}
+      <View style={styles.postHeader}>
+        <TouchableOpacity
+          onPress={() => router.push(`/${post.user.username}` as any)}
+          activeOpacity={0.7}
+        >
+          <Image
+            source={{
+              uri: post.user.avatar_url || 'https://via.placeholder.com/40',
+            }}
+            style={styles.avatar}
+          />
+        </TouchableOpacity>
+        <View style={styles.postHeaderInfo}>
+          <TouchableOpacity
+            onPress={() => router.push(`/${post.user.username}` as any)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.postUsernameContainer}>
+              <Text style={styles.postUsername}>
+                {post.user.display_name || post.user.username}
+              </Text>
+              {post.user.verified_creator && (
+                <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
+              )}
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
+        </View>
+      </View>
+
+      {/* Share Header - if this is a shared post */}
+      {post.shared_post && (
+        <View style={styles.shareHeader}>
+          <View style={styles.shareHeaderContent}>
+            <FontAwesome name="share" size={14} color="#FF6B00" />
+            <Text style={styles.shareHeaderText}>
+              {post.user.display_name || post.user.username} shared a post
+            </Text>
+          </View>
+          {post.content && (
+            <View style={styles.shareComment}>
+              <MentionText text={post.content} style={styles.shareCommentText} />
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Post Content */}
+      {post.shared_post ? (
+        // Show shared post content in an embedded card
+        <View style={styles.sharedPostCard}>
+          <View style={styles.sharedPostHeader}>
+            <TouchableOpacity
+              onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
+              activeOpacity={0.7}
+            >
+              <Image
+                source={{
+                  uri: post.shared_post!.user.avatar_url || 'https://via.placeholder.com/40',
+                }}
+                style={styles.avatar}
+              />
+            </TouchableOpacity>
+            <View style={styles.postHeaderInfo}>
+              <TouchableOpacity
+                onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.postUsernameContainer}>
+                  <Text style={styles.postUsername}>
+                    {post.shared_post!.user.display_name || post.shared_post!.user.username}
+                  </Text>
+                  {post.shared_post!.user.verified_creator && (
+                    <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
+                  )}
+                </View>
+              </TouchableOpacity>
+              <Text style={styles.postTime}>{formatTime(post.shared_post!.created_at)}</Text>
+            </View>
+          </View>
+          {post.shared_post.content && (
+            <TouchableOpacity
+              onPress={() => {
+                setExpandedPosts((prev) => ({
+                  ...prev,
+                  [post.shared_post!.id]: !prev[post.shared_post!.id],
+                }));
+              }}
+              activeOpacity={0.7}
+            >
+              <MentionText
+                text={post.shared_post.content}
+                style={styles.postContent}
+                numberOfLines={expandedPosts[post.shared_post.id] ? undefined : 3}
+              />
+              {post.shared_post.content.length > 150 && (
+                <Text style={styles.showMoreText}>
+                  {expandedPosts[post.shared_post.id] ? 'Show less' : 'Show more'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+          {post.shared_post.media.length > 0 && (
+            <FeedMediaGrid
+              media={post.shared_post.media}
+              onImagePress={(index: number) => {
+                setImageViewerMedia(post.shared_post!.media.map((m) => ({ url: m.url, type: m.type })));
+                setImageViewerIndex(index);
+                setSelectedImage({ url: post.shared_post!.media[index].url, type: post.shared_post!.media[index].type });
+                setImageViewerVisible(true);
+              }}
+            />
+          )}
+        </View>
+      ) : (
+        <>
+          {/* Regular post content */}
+          {post.content && (
+        <TouchableOpacity
+          onPress={() => {
+            setExpandedPosts((prev) => ({
+              ...prev,
+              [post.id]: !prev[post.id],
+            }));
+          }}
+          activeOpacity={0.7}
+        >
+          <MentionText
+            text={post.content}
+            style={styles.postContent}
+            numberOfLines={expandedPosts[post.id] ? undefined : 3}
+          />
+          {post.content.length > 150 && (
+            <Text style={styles.showMoreText}>
+              {expandedPosts[post.id] ? 'Show less' : 'Show more'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      )}
+
+          {/* Post Media */}
+          {post.media.length > 0 && (
+            <FeedMediaGrid
+              media={post.media}
+              onImagePress={(index: number) => {
+                setImageViewerMedia(post.media.map((m) => ({ url: m.url, type: m.type })));
+                setImageViewerIndex(index);
+                setSelectedImage({ url: post.media[index].url, type: post.media[index].type });
+                setImageViewerVisible(true);
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {/* Post Actions */}
+      <View style={styles.postActions}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => handleLike(post)}
+        >
+          <FontAwesome
+            name={post.is_liked ? 'heart' : 'heart-o'}
+            size={20}
+            color={post.is_liked ? '#FF6B00' : '#666'}
+          />
+          <Text style={styles.actionText}>{post.likes_count}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => handleComment(post)}
+        >
+          <FontAwesome name="comment-o" size={20} color="#666" />
+          <Text style={styles.actionText}>{post.comments_count}</Text>
+        </TouchableOpacity>
+        <View style={styles.shareActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleShare(post)}
+          >
+            <FontAwesome name="share" size={20} color="#666" />
+            <Text style={styles.actionText}>{post.shares_count}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.copyLinkButton}
+            onPress={() => handleCopyPostLink(post)}
+          >
+            <FontAwesome name="link" size={16} color="#666" />
+          </TouchableOpacity>
+        </View>
+        {post.reward_enabled && (
+          <View style={styles.rewardBadge}>
+            <FontAwesome name="dollar" size={14} color="#FF6B00" />
+            <Text style={styles.rewardText}> {post.reward_pool}</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  ), [router, expandedPosts, setExpandedPosts, setImageViewerMedia, setImageViewerIndex, setSelectedImage, setImageViewerVisible, handleLike, handleComment, handleShare, handleCopyPostLink, formatTime]);
+
+  // Render footer loading indicator
+  const renderFooter = useCallback(() => {
+    if (!loadingMore) return null;
+    
+    return (
+      <View style={styles.loadingFooter}>
+        <ActivityIndicator size="small" color="#FF6B00" />
+        <Text style={styles.loadingFooterText}>Loading more posts...</Text>
+      </View>
+    );
+  }, [loadingMore]);
+
+  // Render empty state
+  const renderEmpty = useCallback(() => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyText}>No posts yet</Text>
+      <Text style={styles.emptySubtext}>Start following creators to see their posts</Text>
+    </View>
+  ), []);
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -990,220 +1261,23 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
       </View>
 
       {/* Feed */}
-      <ScrollView
+      <FlatList
         style={styles.feed}
+        data={posts}
+        renderItem={renderPost}
+        keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {posts.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet</Text>
-            <Text style={styles.emptySubtext}>Start following creators to see their posts</Text>
-          </View>
-        ) : (
-          posts.map((post) => (
-            <View key={post.id} style={styles.postCard}>
-              {/* Post Header */}
-              <View style={styles.postHeader}>
-                <TouchableOpacity
-                  onPress={() => router.push(`/${post.user.username}` as any)}
-                  activeOpacity={0.7}
-                >
-                  <Image
-                    source={{
-                      uri: post.user.avatar_url || 'https://via.placeholder.com/40',
-                    }}
-                    style={styles.avatar}
-                  />
-                </TouchableOpacity>
-                <View style={styles.postHeaderInfo}>
-                  <TouchableOpacity
-                    onPress={() => router.push(`/${post.user.username}` as any)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.postUsernameContainer}>
-                      <Text style={styles.postUsername}>
-                        {post.user.display_name || post.user.username}
-                      </Text>
-                      {post.user.verified_creator && (
-                        <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
-                </View>
-              </View>
-
-              {/* Share Header - if this is a shared post */}
-              {post.shared_post && (
-                <View style={styles.shareHeader}>
-                  <View style={styles.shareHeaderContent}>
-                    <FontAwesome name="share" size={14} color="#FF6B00" />
-                    <Text style={styles.shareHeaderText}>
-                      {post.user.display_name || post.user.username} shared a post
-                    </Text>
-                  </View>
-                  {post.content && (
-                    <View style={styles.shareComment}>
-                      <MentionText text={post.content} style={styles.shareCommentText} />
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Post Content */}
-              {post.shared_post ? (
-                // Show shared post content in an embedded card
-                <View style={styles.sharedPostCard}>
-                  <View style={styles.sharedPostHeader}>
-                    <TouchableOpacity
-                      onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
-                      activeOpacity={0.7}
-                    >
-                      <Image
-                        source={{
-                          uri: post.shared_post!.user.avatar_url || 'https://via.placeholder.com/40',
-                        }}
-                        style={styles.avatar}
-                      />
-                    </TouchableOpacity>
-                    <View style={styles.postHeaderInfo}>
-                      <TouchableOpacity
-                        onPress={() => router.push(`/${post.shared_post!.user.username}` as any)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.postUsernameContainer}>
-                          <Text style={styles.postUsername}>
-                            {post.shared_post!.user.display_name || post.shared_post!.user.username}
-                          </Text>
-                          {post.shared_post!.user.verified_creator && (
-                            <FontAwesome name="check-circle" size={16} color="#1DA1F2" style={styles.verifiedIcon} />
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                      <Text style={styles.postTime}>{formatTime(post.shared_post!.created_at)}</Text>
-                    </View>
-                  </View>
-                  {post.shared_post.content && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setExpandedPosts((prev) => ({
-                          ...prev,
-                          [post.shared_post!.id]: !prev[post.shared_post!.id],
-                        }));
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <MentionText
-                        text={post.shared_post.content}
-                        style={styles.postContent}
-                        numberOfLines={expandedPosts[post.shared_post.id] ? undefined : 3}
-                      />
-                      {post.shared_post.content.length > 150 && (
-                        <Text style={styles.showMoreText}>
-                          {expandedPosts[post.shared_post.id] ? 'Show less' : 'Show more'}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                  {post.shared_post.media.length > 0 && (
-                    <FeedMediaGrid
-                      media={post.shared_post.media}
-                      onImagePress={(index: number) => {
-                        setImageViewerMedia(post.shared_post!.media.map((m) => ({ url: m.url, type: m.type })));
-                        setImageViewerIndex(index);
-                        setSelectedImage({ url: post.shared_post!.media[index].url, type: post.shared_post!.media[index].type });
-                        setImageViewerVisible(true);
-                      }}
-                    />
-                  )}
-                </View>
-              ) : (
-                <>
-                  {/* Regular post content */}
-                  {post.content && (
-                <TouchableOpacity
-                  onPress={() => {
-                    setExpandedPosts((prev) => ({
-                      ...prev,
-                      [post.id]: !prev[post.id],
-                    }));
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <MentionText
-                    text={post.content}
-                    style={styles.postContent}
-                    numberOfLines={expandedPosts[post.id] ? undefined : 3}
-                  />
-                  {post.content.length > 150 && (
-                    <Text style={styles.showMoreText}>
-                      {expandedPosts[post.id] ? 'Show less' : 'Show more'}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              )}
-
-                  {/* Post Media */}
-                  {post.media.length > 0 && (
-                    <FeedMediaGrid
-                      media={post.media}
-                      onImagePress={(index: number) => {
-                        setImageViewerMedia(post.media.map((m) => ({ url: m.url, type: m.type })));
-                        setImageViewerIndex(index);
-                        setSelectedImage({ url: post.media[index].url, type: post.media[index].type });
-                        setImageViewerVisible(true);
-                      }}
-                    />
-                  )}
-                </>
-              )}
-
-              {/* Post Actions */}
-              <View style={styles.postActions}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => handleLike(post)}
-                >
-                  <FontAwesome
-                    name={post.is_liked ? 'heart' : 'heart-o'}
-                    size={20}
-                    color={post.is_liked ? '#FF6B00' : '#666'}
-                  />
-                  <Text style={styles.actionText}>{post.likes_count}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => handleComment(post)}
-                >
-                  <FontAwesome name="comment-o" size={20} color="#666" />
-                  <Text style={styles.actionText}>{post.comments_count}</Text>
-                </TouchableOpacity>
-                <View style={styles.shareActions}>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleShare(post)}
-                  >
-                    <FontAwesome name="share" size={20} color="#666" />
-                    <Text style={styles.actionText}>{post.shares_count}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.copyLinkButton}
-                    onPress={() => handleCopyPostLink(post)}
-                  >
-                    <FontAwesome name="link" size={16} color="#666" />
-                  </TouchableOpacity>
-                </View>
-                {post.reward_enabled && (
-                  <View style={styles.rewardBadge}>
-                    <FontAwesome name="dollar" size={14} color="#FF6B00" />
-                    <Text style={styles.rewardText}> {post.reward_pool}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          ))
-        )}
-      </ScrollView>
+        onEndReached={loadMorePosts}
+        onEndReachedThreshold={0.1}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={loading ? null : renderEmpty}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        initialNumToRender={10}
+        windowSize={10}
+      />
 
       {/* Full-Screen Post Composer Modal */}
       <Modal
@@ -3241,6 +3315,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  loadingFooter: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 10,
+  },
+  loadingFooterText: {
+    fontSize: 14,
+    color: '#666',
   },
 });
 

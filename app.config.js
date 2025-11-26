@@ -32,6 +32,7 @@ module.exports = {
       supportsTablet: true,
     },
     android: {
+      package: 'com.fancoin.app',
       adaptiveIcon: {
         foregroundImage: './assets/images/adaptive-icon.png',
         backgroundColor: '#ffffff',
