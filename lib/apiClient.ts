@@ -54,6 +54,7 @@ class ApiClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
+      timeout: 10000, // 10 second timeout
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -173,14 +174,14 @@ class ApiClient {
         return {
           ok: false,
           status: axiosError.response?.status || 500,
-          data: axiosError.response?.data?.data,
-          errors: axiosError.response?.data?.errors || [
+          data: (axiosError.response?.data as any)?.data,
+          errors: (axiosError.response?.data as any)?.errors || [
             {
               title: 'Request failed',
               detail: axiosError.message || 'An error occurred',
             },
           ],
-          meta: axiosError.response?.data?.meta,
+          meta: (axiosError.response?.data as any)?.meta,
           raw: axiosError.response?.data,
         };
       }
