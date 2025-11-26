@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -137,6 +137,12 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
   const [newComment, setNewComment] = useState('');
   const [commenting, setCommenting] = useState(false);
   const [sortBy, setSortBy] = useState<'newest' | 'popular'>('newest');
+  
+  // Use ref to avoid stale closure issues with sortBy
+  const sortByRef = useRef(sortBy);
+  useEffect(() => {
+    sortByRef.current = sortBy;
+  }, [sortBy]);
   const [postDetailModalVisible, setPostDetailModalVisible] = useState(false);
   const [postDetailPost, setPostDetailPost] = useState<FeedPost | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
@@ -156,7 +162,7 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
   const [lastTranslate] = useState({ x: 0, y: 0 });
 
   const loadFeed = useCallback(async (page = 1, isRefresh = false) => {
-    console.log('Feed: loadFeed called', { page, isRefresh, sortBy });
+    console.log('Feed: loadFeed called', { page, isRefresh, sortBy: sortByRef.current });
 
     try {
       if (page === 1) {
@@ -167,13 +173,13 @@ const params = useLocalSearchParams<{ openPost?: string; commentId?: string; com
       }
 
       console.log('Feed: Making API request', { 
-        url: `/v1/feed?sort=${sortBy}&per_page=20&page=${page}`,
-        sortBy,
+        url: `/v1/feed?sort=${sortByRef.current}&per_page=20&page=${page}`,
+        sortBy: sortByRef.current,
         page 
       });
 
       const response = await apiClient.get<FeedPost[]>(
-        `/v1/feed?sort=${sortBy}&per_page=20&page=${page}`
+        `/v1/feed?sort=${sortByRef.current}&per_page=20&page=${page}`
       );
 
       console.log('Feed: API response received', {
