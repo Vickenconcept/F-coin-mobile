@@ -269,7 +269,9 @@ export function useFeed(sortBy: 'newest' | 'popular' = 'newest') {
   }, []);
 
   const handleShareToTimeline = useCallback(async (postId: string, comment?: string) => {
+    console.log('🔄 useFeed: handleShareToTimeline called with:', { postId, comment });
     try {
+      console.log('📤 useFeed: Making API request to share endpoint');
       const response = await apiClient.request<{ 
         id: string; 
         shares_count: number;
@@ -278,6 +280,7 @@ export function useFeed(sortBy: 'newest' | 'popular' = 'newest') {
         method: 'POST',
         data: { comment, share_to_timeline: true }
       });
+      console.log('📥 useFeed: API response received:', { ok: response.ok, status: response.status, hasData: !!response.data });
 
       if (response.ok && response.data) {
         setPosts((prev) =>
@@ -299,6 +302,9 @@ export function useFeed(sortBy: 'newest' | 'popular' = 'newest') {
           text2: 'Post shared to your timeline!',
           visibilityTime: 2000,
         });
+      } else {
+        // API call failed - throw error so modal doesn't close
+        throw new Error(response.errors?.[0]?.detail || 'Failed to share post');
       }
     } catch (error) {
       console.error('Share error:', error);
@@ -307,6 +313,7 @@ export function useFeed(sortBy: 'newest' | 'popular' = 'newest') {
         text1: 'Error',
         text2: 'Failed to share post',
       });
+      throw error; // Re-throw so calling components know it failed
     }
   }, [setPosts]);
 

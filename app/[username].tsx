@@ -1079,6 +1079,7 @@ export default function UserProfileScreen() {
     <View style={styles.container}>
       <ScrollView
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollViewContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Header */}
@@ -1832,6 +1833,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollViewContent: {
+    paddingBottom: 100, // Add bottom padding to prevent cut-off
   },
   header: {
     flexDirection: 'row',

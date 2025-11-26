@@ -131,6 +131,17 @@ export default function FeedScreen() {
     }));
   }, []);
 
+  const handleShareToTimelineStable = useCallback(async (comment?: string) => {
+    console.log('🎯 Feed: STABLE onShareToTimeline called with comment:', comment);
+    console.log('🎯 Feed: postToShare.id:', postToShare?.id);
+    if (!postToShare) {
+      console.error('❌ Feed: postToShare is null!');
+      throw new Error('Post to share is not available');
+    }
+    await handleShareToTimeline(postToShare.id, comment);
+    console.log('✅ Feed: STABLE handleShareToTimeline completed');
+  }, [postToShare, handleShareToTimeline]);
+
   const handleImagePress = useCallback((post: FeedPost, imageIndex: number) => {
     if (post.media && Array.isArray(post.media)) {
       const mediaItems = post.media.map(item => ({ url: item.url, type: item.type }));
@@ -430,15 +441,12 @@ export default function FeedScreen() {
           <ShareModal
             visible={shareModalVisible}
             onClose={() => {
+              console.log('🔒 Feed: ShareModal onClose called');
               setShareModalVisible(false);
               setPostToShare(null);
             }}
             post={postToShare}
-            onShareToTimeline={async (comment?: string) => {
-              await handleShareToTimeline(postToShare.id, comment);
-              setShareModalVisible(false);
-              setPostToShare(null);
-            }}
+            onShareToTimeline={handleShareToTimelineStable}
           />
         )}
       </View>

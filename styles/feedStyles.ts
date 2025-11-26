@@ -70,7 +70,8 @@ export const feedStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
-    elevation: 5,
+    elevation: 10,
+    zIndex: 1000,
   },
   newPostsText: {
     color: '#fff',

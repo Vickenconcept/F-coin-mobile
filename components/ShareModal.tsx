@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -42,31 +42,53 @@ export function ShareModal({
   const [shareComment, setShareComment] = useState('');
   const [isSharing, setIsSharing] = useState(false);
 
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!visible) {
+      setIsSharing(false);
+      setShareComment('');
+    }
+  }, [visible]);
+
   const defaultPostUrl = postUrl || `https://fcoin.app/posts/${post.id}`;
   const shareText = post.content && post.content.trim()
     ? `${post.user.display_name || post.user.username}: ${post.content.substring(0, 100)}${post.content.length > 100 ? '...' : ''}`
     : `Check out this post by ${post.user.display_name || post.user.username}`;
 
   const handleShareToTimeline = async () => {
+    // Prevent double-clicks
+    if (isSharing) {
+      console.log('🚫 ShareModal: Already sharing, ignoring click');
+      return;
+    }
+
+    console.log('🚀 ShareModal: handleShareToTimeline called');
+    console.log('🚀 ShareModal: Modal visible:', visible);
+    console.log('🚀 ShareModal: Post ID:', post?.id);
+    console.log('🚀 ShareModal: onShareToTimeline function type:', typeof onShareToTimeline);
+    
     setIsSharing(true);
     try {
-      await onShareToTimeline(shareComment.trim() || undefined);
+      console.log('📞 ShareModal: About to call onShareToTimeline');
+      const result = await onShareToTimeline(shareComment.trim() || undefined);
+      console.log('✅ ShareModal: onShareToTimeline completed successfully, result:', result);
+      
+      // Clear comment and close modal immediately
       setShareComment('');
+      console.log('🔒 ShareModal: Closing modal immediately');
       onClose();
-      Toast.show({
-        type: 'success',
-        text1: 'Success',
-        text2: 'Post shared to your timeline!',
-        visibilityTime: 2000,
-      });
+      
     } catch (error) {
+      console.error('❌ ShareModal: Share failed:', error);
       Toast.show({
         type: 'error',
         text1: 'Error',
         text2: 'Failed to share to timeline',
         visibilityTime: 3000,
       });
+      // Don't close modal on error - let user try again
     } finally {
+      console.log('🔄 ShareModal: Setting isSharing to false');
       setIsSharing(false);
     }
   };

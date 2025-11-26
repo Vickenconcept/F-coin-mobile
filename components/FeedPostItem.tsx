@@ -45,6 +45,17 @@ export function FeedPostItem({
   isExpanded = false,
   onToggleExpanded,
 }: FeedPostItemProps) {
+  
+  // Debug logging to check post structure
+  if (post.shared_post) {
+    console.log('🔍 FeedPostItem: Shared post detected', {
+      postId: post.id,
+      postUser: post.user.username,
+      sharedPostId: post.shared_post.id,
+      sharedPostUser: post.shared_post.user.username,
+      hasSharedPost: !!post.shared_post
+    });
+  }
   // Add safety checks for post data
   if (!post || !post.user) {
     console.error('FeedPostItem: Invalid post data', post);
@@ -183,11 +194,23 @@ export function FeedPostItem({
         )}
 
         {/* Media */}
-        {post.media && Array.isArray(post.media) && post.media.length > 0 && (
+        {/* {post.media && Array.isArray(post.media) && post.media.length > 0 && (
           <FeedMediaGrid 
             media={post.media} 
             onImagePress={onImagePress}
           />
+        )} */}
+
+        {/* Share Header - if this is a shared post */}
+        {post.shared_post && (
+          <View style={styles.shareHeader}>
+            <View style={styles.shareHeaderContent}>
+              <FontAwesome name="share" size={14} color="#FF6B00" />
+              <Text style={styles.shareHeaderText}>
+                {post.user.display_name || post.user.username} shared a post
+              </Text>
+            </View>
+          </View>
         )}
 
         {/* Shared Post */}
@@ -239,8 +262,8 @@ export function FeedPostItem({
         visible={shareModalVisible}
         onClose={() => setShareModalVisible(false)}
         post={post}
-        onShareToTimeline={async () => {
-          setShareModalVisible(false);
+        onShareToTimeline={async (comment) => {
+          // Let ShareModal handle closing
           onShare(post);
         }}
       />
@@ -380,5 +403,22 @@ const styles = StyleSheet.create({
     color: '#FF6B00',
     fontWeight: '600',
     marginTop: 4,
+  },
+  shareHeader: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  shareHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  shareHeaderText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 6,
+    fontWeight: '500',
   },
 });
