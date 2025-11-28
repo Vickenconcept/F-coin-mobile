@@ -452,7 +452,12 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
   if (!post) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal 
+      visible={visible} 
+      animationType="slide" 
+      {...(Platform.OS === 'ios' ? { presentationStyle: 'pageSheet' } : {})}
+      onRequestClose={onClose}
+    >
       <KeyboardAvoidingView 
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

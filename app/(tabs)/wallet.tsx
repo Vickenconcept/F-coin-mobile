@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  BackHandler,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { apiClient } from '../../lib/apiClient';
@@ -193,6 +194,21 @@ export default function WalletScreen() {
       await fetchWithdrawalHistory();
     }
   }, [fetchWallet, fetchWithdrawalHistory, activeTab]);
+
+  // Handle Android back button for Send Modal
+  useEffect(() => {
+    if (!isSendModalVisible) return;
+
+    const backAction = () => {
+      setIsSendModalVisible(false);
+      resetTransferForm();
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [isSendModalVisible, resetTransferForm]);
 
   // Username validation
   useEffect(() => {

@@ -226,11 +226,21 @@ export function PostComposer({
     }
   }, [visible, rewardEnabled, walletCoins.length, fetchWalletCoins]);
 
-  // Handle Android back button
+  // Handle Android back button - navigate steps or close
   useEffect(() => {
     if (!visible) return;
 
     const backAction = () => {
+      // If on step 2 or 3, go back to previous step
+      if (postCreationStep === 2) {
+        setPostCreationStep(1);
+        return true; // Prevent default back action
+      }
+      if (postCreationStep === 3) {
+        setPostCreationStep(2);
+        return true; // Prevent default back action
+      }
+      // If on step 1, close the modal
       handleClose();
       return true; // Prevent default back action
     };
@@ -238,7 +248,7 @@ export function PostComposer({
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
 
     return () => backHandler.remove();
-  }, [visible, handleClose]);
+  }, [visible, handleClose, postCreationStep]);
 
   const selectedRewardCoinBalance = walletCoins.find(
     (coin) => coin.coin_symbol === rewardCoinSymbol
@@ -339,7 +349,12 @@ export function PostComposer({
   }, [content, visibility, uploadedMedia, rewardEnabled, rewardPool, rewardCoinSymbol, rewardLikeAmount, rewardCommentAmount, rewardShareAmount, rewardPerUserCap, handleClose, onPostCreated]);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal 
+      visible={visible} 
+      animationType="slide" 
+      {...(Platform.OS === 'ios' ? { presentationStyle: 'pageSheet' } : {})}
+      onRequestClose={handleClose}
+    >
       <KeyboardAvoidingView 
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

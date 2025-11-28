@@ -13,6 +13,7 @@ import {
   Alert,
   SafeAreaView,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { apiClient } from '../lib/apiClient';
@@ -119,6 +120,20 @@ export default function WithdrawalModal({
       }
     }
   }, [visible, coinBalances]);
+
+  // Handle Android back button
+  useEffect(() => {
+    if (!visible) return;
+
+    const backAction = () => {
+      onClose();
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [visible, onClose]);
 
   const resetForm = () => {
     setCurrentStep('currency');

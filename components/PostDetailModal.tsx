@@ -44,43 +44,94 @@ export function PostDetailModal({
   isLiking = false,
   isSharing = false,
 }: PostDetailModalProps) {
+  // Local state for post to allow optimistic updates
+  const [displayPost, setDisplayPost] = useState<FeedPost | null>(post);
+  
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [replyContent, setReplyContent] = useState<Record<string, string>>({});
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [commenting, setCommenting] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
+  const [likingComment, setLikingComment] = useState<string | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
 
-  const loadComments = useCallback(async () => {
-    if (!post) return;
+  // Sync displayPost with post prop when modal opens or post ID changes
+  useEffect(() => {
+    if (visible && post) {
+      setDisplayPost(post);
+    }
+  }, [visible, post?.id]);
+
+  // Handle post like with optimistic update
+  const handlePostLike = useCallback(() => {
+    if (!displayPost || isLiking) return;
+
+    // Optimistic update - update UI immediately
+    const currentIsLiked = (displayPost as any).is_liked ?? false;
+    const newIsLiked = !currentIsLiked;
+    const newLikesCount = newIsLiked 
+      ? (displayPost.likes_count || 0) + 1 
+      : Math.max(0, (displayPost.likes_count || 0) - 1);
+
+    const updatedPost = {
+      ...displayPost,
+      likes_count: newLikesCount,
+      is_liked: newIsLiked,
+    } as any;
+
+    setDisplayPost(updatedPost as FeedPost);
+
+    // Also update parent
+    onUpdatePost({
+      likes_count: newLikesCount,
+      ...({ is_liked: newIsLiked } as any),
+    });
+
+    // Call the parent's like handler (which will sync with API)
+    onLike(displayPost.id);
+  }, [displayPost, isLiking, onLike, onUpdatePost]);
+
+  const loadComments = useCallback(async (postId: string) => {
+    if (!postId) return;
 
     setLoadingComments(true);
     try {
       const response = await apiClient.get<Comment[]>(
-        `/v1/feed/posts/${post.id}/comments`
+        `/v1/feed/posts/${postId}/comments`
       );
 
       if (response.ok && response.data) {
         const commentsWithReplies = response.data.map(comment => ({
           ...comment,
-          replies: comment.replies || []
+          is_liked: comment.is_liked ?? false,
+          likes_count: comment.likes_count ?? 0,
+          replies: (comment.replies || []).map(reply => ({
+            ...reply,
+            is_liked: reply.is_liked ?? false,
+            likes_count: reply.likes_count ?? 0,
+          }))
         }));
         setComments(commentsWithReplies);
+        console.log('PostDetailModal: Loaded comments', { count: commentsWithReplies.length });
       }
     } catch (error) {
       console.error('Load comments error:', error);
     } finally {
       setLoadingComments(false);
     }
-  }, [post]);
+  }, []);
 
   useEffect(() => {
-    if (visible && post) {
-      loadComments();
+    if (visible && displayPost?.id) {
+      loadComments(displayPost.id);
     } else {
       setComments([]);
       setNewComment('');
+      setReplyContent({});
+      setReplyingTo(null);
     }
-  }, [visible, post, loadComments]);
+  }, [visible, displayPost?.id, loadComments]);
 
   // Handle Android back button
   useEffect(() => {
@@ -96,18 +147,31 @@ export function PostDetailModal({
     return () => backHandler.remove();
   }, [visible, onClose]);
 
-  const handleSubmitComment = useCallback(async () => {
-    if (!post || !newComment.trim()) return;
+  const handleSubmitComment = useCallback(async (parentId?: string) => {
+    if (!displayPost) {
+      console.log('PostDetailModal: Cannot submit comment - no post');
+      return;
+    }
+
+    const content = parentId ? (replyContent[parentId] || '').trim() : newComment.trim();
+    if (!content) {
+      console.log('PostDetailModal: Cannot submit comment - no content');
+      return;
+    }
+
+    console.log('PostDetailModal: Submitting comment', { parentId, contentLength: content.length });
 
     setCommenting(true);
     try {
-      const response = await apiClient.request<Comment>(`/v1/feed/posts/${post.id}/comment`, {
+      const response = await apiClient.request<Comment>(`/v1/feed/posts/${displayPost.id}/comment`, {
         method: 'POST',
         data: {
-          content: newComment.trim(),
-          parent_id: null,
+          content,
+          parent_id: parentId || null,
         },
       });
+
+      console.log('PostDetailModal: Comment response', { ok: response.ok, hasData: !!response.data, errors: response.errors });
 
       if (response.ok && response.data) {
         const newCommentData = {
@@ -115,27 +179,230 @@ export function PostDetailModal({
           replies: response.data.replies || [],
         };
 
-        setComments((prev) => [newCommentData, ...prev]);
-        setNewComment('');
-        onUpdatePost({ comments_count: post.comments_count + 1 });
+        if (parentId) {
+          // It's a reply
+          const replyData = {
+            id: newCommentData.id,
+            content: newCommentData.content,
+            user: newCommentData.user,
+            likes_count: newCommentData.likes_count,
+            is_liked: newCommentData.is_liked,
+            created_at: newCommentData.created_at,
+          };
+          
+          setComments((prev) =>
+            prev.map((comment) =>
+              comment.id === parentId
+                ? { ...comment, replies: [replyData, ...(comment.replies || [])] }
+                : comment
+            )
+          );
+          setReplyContent((prev) => ({ ...prev, [parentId]: '' }));
+          setReplyingTo(null);
+        } else {
+          // It's a top-level comment
+          setComments((prev) => [newCommentData, ...prev]);
+          setNewComment('');
+        }
+
+        onUpdatePost({ comments_count: displayPost.comments_count + 1 });
 
         Toast.show({
           type: 'success',
           text1: 'Success',
           text2: 'Comment posted successfully',
         });
+      } else {
+        // Response not ok
+        const errorMessage = response.errors?.[0]?.detail || 'Failed to post comment';
+        console.error('PostDetailModal: Comment submission failed', response.errors);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: errorMessage,
+        });
       }
     } catch (error) {
-      console.error('Submit comment error:', error);
+      console.error('PostDetailModal: Submit comment error:', error);
       Toast.show({
         type: 'error',
         text1: 'Error',
-        text2: 'Failed to post comment',
+        text2: 'Failed to post comment. Please try again.',
       });
     } finally {
       setCommenting(false);
     }
-  }, [post, newComment, onUpdatePost]);
+  }, [displayPost, newComment, replyContent, onUpdatePost]);
+
+  const handleLikeComment = useCallback(async (commentId: string) => {
+    console.log('PostDetailModal: handleLikeComment called', { commentId, hasPost: !!displayPost, likingComment });
+    
+    if (!displayPost) {
+      console.log('PostDetailModal: Cannot like comment - no post');
+      return;
+    }
+    
+    if (likingComment) {
+      console.log('PostDetailModal: Already liking a comment, ignoring');
+      return;
+    }
+
+    // Find the comment/reply to get current state
+    let targetComment: { is_liked: boolean; likes_count: number } | undefined;
+    
+    // First check if it's a top-level comment
+    const topLevelComment = comments.find((c) => c.id === commentId);
+    if (topLevelComment) {
+      targetComment = topLevelComment;
+      console.log('PostDetailModal: Found top-level comment', { is_liked: topLevelComment.is_liked, likes_count: topLevelComment.likes_count });
+    } else {
+      // If not found, check if it's a reply
+      for (const comment of comments) {
+        const reply = comment.replies?.find((r) => r.id === commentId);
+        if (reply) {
+          targetComment = reply;
+          console.log('PostDetailModal: Found reply', { is_liked: reply.is_liked, likes_count: reply.likes_count });
+          break;
+        }
+      }
+    }
+
+    if (!targetComment) {
+      console.log('PostDetailModal: Comment not found', { commentId, commentsCount: comments.length });
+      return;
+    }
+
+    // Optimistic update
+    const newLikedState = !targetComment.is_liked;
+    const newLikesCount = newLikedState 
+      ? targetComment.likes_count + 1 
+      : Math.max(0, targetComment.likes_count - 1);
+
+    setLikingComment(commentId);
+    
+    // Update immediately
+    setComments((prev) =>
+      prev.map((c) => {
+        if (c.id === commentId) {
+          return {
+            ...c,
+            is_liked: newLikedState,
+            likes_count: newLikesCount,
+          };
+        }
+        if (c.replies?.some((r) => r.id === commentId)) {
+          return {
+            ...c,
+            replies: (c.replies || []).map((reply) =>
+              reply.id === commentId
+                ? {
+                    ...reply,
+                    is_liked: newLikedState,
+                    likes_count: newLikesCount,
+                  }
+                : reply
+            ),
+          };
+        }
+        return c;
+      })
+    );
+
+    try {
+      console.log('PostDetailModal: Calling API to like comment', { postId: displayPost.id, commentId });
+      const response = await apiClient.request<{ liked: boolean; likes_count: number }>(
+        `/v1/feed/posts/${displayPost.id}/comments/${commentId}/like`,
+        { method: 'POST' }
+      );
+
+      console.log('PostDetailModal: Like comment API response', { ok: response.ok, hasData: !!response.data, errors: response.errors });
+
+      if (response.ok && response.data) {
+        // Update with actual server response
+        setComments((prev) =>
+          prev.map((c) => {
+            if (c.id === commentId) {
+              return {
+                ...c,
+                is_liked: response.data!.liked,
+                likes_count: response.data!.likes_count,
+              };
+            }
+            return {
+              ...c,
+              replies: (c.replies || []).map((reply) =>
+                reply.id === commentId
+                  ? {
+                      ...reply,
+                      is_liked: response.data!.liked,
+                      likes_count: response.data!.likes_count,
+                    }
+                  : reply
+              ),
+            };
+          })
+        );
+      } else {
+        // Revert optimistic update on failure
+        setComments((prev) =>
+          prev.map((c) => {
+            if (c.id === commentId) {
+              return {
+                ...c,
+                is_liked: targetComment!.is_liked,
+                likes_count: targetComment!.likes_count,
+              };
+            }
+            return {
+              ...c,
+              replies: (c.replies || []).map((reply) =>
+                reply.id === commentId
+                  ? {
+                      ...reply,
+                      is_liked: targetComment!.is_liked,
+                      likes_count: targetComment!.likes_count,
+                    }
+                  : reply
+              ),
+            };
+          })
+        );
+      }
+    } catch (error) {
+      console.error('PostDetailModal: Like comment error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to like comment. Please try again.',
+      });
+      // Revert optimistic update on error
+      setComments((prev) =>
+        prev.map((c) => {
+          if (c.id === commentId) {
+            return {
+              ...c,
+              is_liked: targetComment!.is_liked,
+              likes_count: targetComment!.likes_count,
+            };
+          }
+          return {
+            ...c,
+            replies: (c.replies || []).map((reply) =>
+              reply.id === commentId
+                ? {
+                    ...reply,
+                    is_liked: targetComment!.is_liked,
+                    likes_count: targetComment!.likes_count,
+                  }
+                : reply
+            ),
+          };
+        })
+      );
+    } finally {
+      setLikingComment(null);
+    }
+  }, [post, comments, likingComment]);
 
   const formatTimeAgo = useCallback((dateString: string) => {
     const date = new Date(dateString);
@@ -149,10 +416,95 @@ export function PostDetailModal({
     return date.toLocaleDateString();
   }, []);
 
-  if (!post) return null;
+  const renderComment = useCallback((comment: Comment | any, isReply = false) => (
+    <View key={comment.id} style={[styles.commentItem, isReply && styles.replyItem]}>
+      <Image
+        source={{
+          uri: comment.user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.user.display_name || comment.user.username)}&background=FF6B00&color=fff`
+        }}
+        style={styles.commentAvatar}
+      />
+      <View style={styles.commentContent}>
+        <View style={styles.commentHeader}>
+          <Text style={styles.commentUsername}>
+            {comment.user.display_name || comment.user.username}
+          </Text>
+          <Text style={styles.commentTime}>{formatTimeAgo(comment.created_at)}</Text>
+        </View>
+        <MentionText text={comment.content} style={styles.commentText} />
+        
+        <View style={styles.commentActions}>
+          <TouchableOpacity
+            style={styles.commentAction}
+            onPress={() => handleLikeComment(comment.id)}
+            disabled={likingComment === comment.id}
+          >
+            <FontAwesome
+              name={comment.is_liked ? "heart" : "heart-o"}
+              size={14}
+              color={comment.is_liked ? "#FF6B00" : "#666"}
+            />
+            <Text style={[styles.commentActionText, comment.is_liked && styles.likedText]}>
+              {comment.likes_count || 0}
+            </Text>
+          </TouchableOpacity>
+          
+          {!isReply && (
+            <TouchableOpacity
+              style={styles.commentAction}
+              onPress={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+            >
+              <FontAwesome name="reply" size={14} color="#666" />
+              <Text style={styles.commentActionText}>Reply</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Reply Input */}
+        {replyingTo === comment.id && (
+          <View style={styles.replyInputContainer}>
+            <MentionInput
+              value={replyContent[comment.id] || ''}
+              onChangeText={(text) =>
+                setReplyContent((prev) => ({ ...prev, [comment.id]: text }))
+              }
+              placeholder="Write a reply..."
+              multiline
+              style={styles.replyInput}
+            />
+            <TouchableOpacity
+              style={[styles.replyButton, (!replyContent[comment.id]?.trim() || commenting) && styles.replyButtonDisabled]}
+              onPress={() => handleSubmitComment(comment.id)}
+              disabled={!replyContent[comment.id]?.trim() || commenting}
+            >
+              {commenting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.replyButtonText}>Reply</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Replies */}
+        {comment.replies && comment.replies.length > 0 && (
+          <View style={styles.repliesContainer}>
+            {comment.replies.map((reply: any) => renderComment(reply, true))}
+          </View>
+        )}
+      </View>
+    </View>
+  ), [replyingTo, replyContent, commenting, likingComment, handleLikeComment, handleSubmitComment, formatTimeAgo]);
+
+  if (!displayPost) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal 
+      visible={visible} 
+      animationType="slide" 
+      {...(Platform.OS === 'ios' ? { presentationStyle: 'pageSheet' } : {})}
+      onRequestClose={onClose}
+    >
       <KeyboardAvoidingView 
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -172,54 +524,54 @@ export function PostDetailModal({
             <View style={styles.postHeader}>
               <TouchableOpacity 
                 style={styles.userInfo}
-                onPress={() => onOpenProfile(post.user.id)}
+                onPress={() => onOpenProfile(displayPost.user.id)}
               >
                 <Image
                   source={{ 
-                    uri: post.user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.user.display_name || post.user.username)}&background=FF6B00&color=fff`
+                    uri: displayPost.user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayPost.user.display_name || displayPost.user.username)}&background=FF6B00&color=fff`
                   }}
                   style={styles.avatar}
                 />
                 <View>
                   <Text style={styles.displayName}>
-                    {post.user.display_name || post.user.username}
+                    {displayPost.user.display_name || displayPost.user.username}
                   </Text>
-                  <Text style={styles.username}>@{post.user.username}</Text>
+                  <Text style={styles.username}>@{displayPost.user.username}</Text>
                 </View>
               </TouchableOpacity>
-              <Text style={styles.timestamp}>{formatTimeAgo(post.created_at)}</Text>
+              <Text style={styles.timestamp}>{formatTimeAgo(displayPost.created_at)}</Text>
             </View>
 
             {/* Post Content */}
-            {post.content && (
-              <MentionText text={post.content} style={styles.postContent} />
+            {displayPost.content && (
+              <MentionText text={displayPost.content} style={styles.postContent} />
             )}
 
             {/* Post Media */}
-            {(post as any).media && Array.isArray((post as any).media) && (post as any).media.length > 0 && (
-              <FeedMediaGrid media={(post as any).media} />
+            {(displayPost as any).media && Array.isArray((displayPost as any).media) && (displayPost as any).media.length > 0 && (
+              <FeedMediaGrid media={(displayPost as any).media} />
             )}
 
             {/* Post Actions */}
             <View style={styles.postActions}>
               <TouchableOpacity 
-                style={[styles.actionButton, (post as any).is_liked && styles.likedButton]}
-                onPress={() => onLike(post.id)}
+                style={[styles.actionButton, (displayPost as any).is_liked && styles.likedButton]}
+                onPress={handlePostLike}
                 disabled={isLiking}
               >
                 <FontAwesome 
-                  name={(post as any).is_liked ? "heart" : "heart-o"} 
+                  name={(displayPost as any).is_liked ? "heart" : "heart-o"} 
                   size={20} 
-                  color={(post as any).is_liked ? "#FF6B00" : "#666"} 
+                  color={(displayPost as any).is_liked ? "#FF6B00" : "#666"} 
                 />
-                <Text style={[styles.actionText, (post as any).is_liked && styles.likedText]}>
-                  {post.likes_count}
+                <Text style={[styles.actionText, (displayPost as any).is_liked && styles.likedText]}>
+                  {displayPost.likes_count}
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.actionButton}>
                 <FontAwesome name="comment-o" size={20} color="#666" />
-                <Text style={styles.actionText}>{post.comments_count}</Text>
+                <Text style={styles.actionText}>{displayPost.comments_count}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -228,7 +580,7 @@ export function PostDetailModal({
                 disabled={isSharing}
               >
                 <FontAwesome name="share" size={20} color="#666" />
-                <Text style={styles.actionText}>{(post as any).shares_count || 0}</Text>
+                <Text style={styles.actionText}>{(displayPost as any).shares_count || 0}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -243,33 +595,13 @@ export function PostDetailModal({
                 <Text style={styles.loadingText}>Loading comments...</Text>
               </View>
             ) : comments.length === 0 ? (
-              <Text style={styles.noCommentsText}>No comments yet</Text>
+              <View style={styles.emptyContainer}>
+                <FontAwesome name="comment-o" size={48} color="#ccc" />
+                <Text style={styles.emptyText}>No comments yet</Text>
+                <Text style={styles.emptySubtext}>Be the first to comment!</Text>
+              </View>
             ) : (
-              comments.slice(0, 5).map((comment) => (
-                <View key={comment.id} style={styles.commentItem}>
-                  <Image
-                    source={{
-                      uri: comment.user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.user.display_name || comment.user.username)}&background=FF6B00&color=fff`
-                    }}
-                    style={styles.commentAvatar}
-                  />
-                  <View style={styles.commentContent}>
-                    <View style={styles.commentHeader}>
-                      <Text style={styles.commentUsername}>
-                        {comment.user.display_name || comment.user.username}
-                      </Text>
-                      <Text style={styles.commentTime}>{formatTimeAgo(comment.created_at)}</Text>
-                    </View>
-                    <MentionText text={comment.content} style={styles.commentText} />
-                  </View>
-                </View>
-              ))
-            )}
-
-            {comments.length > 5 && (
-              <TouchableOpacity style={styles.viewAllButton}>
-                <Text style={styles.viewAllText}>View all {comments.length} comments</Text>
-              </TouchableOpacity>
+              comments.map((comment) => renderComment(comment))
             )}
           </View>
         </ScrollView>
@@ -285,7 +617,7 @@ export function PostDetailModal({
           />
           <TouchableOpacity
             style={[styles.sendButton, (!newComment.trim() || commenting) && styles.sendButtonDisabled]}
-            onPress={handleSubmitComment}
+            onPress={() => handleSubmitComment()}
             disabled={!newComment.trim() || commenting}
           >
             {commenting ? (
@@ -300,10 +632,12 @@ export function PostDetailModal({
         <ShareModal
           visible={shareModalVisible}
           onClose={() => setShareModalVisible(false)}
-          post={post as any}
+          post={displayPost as any}
           onShareToTimeline={async () => {
             setShareModalVisible(false);
-            onShare(post);
+            if (displayPost) {
+              onShare(displayPost);
+            }
           }}
         />
       </KeyboardAvoidingView>
@@ -459,14 +793,78 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: '#000',
   },
-  viewAllButton: {
-    alignSelf: 'center',
-    paddingVertical: 12,
+  commentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 16,
   },
-  viewAllText: {
+  commentAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commentActionText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 4,
+  },
+  replyItem: {
+    marginLeft: 48,
+    marginTop: 8,
+  },
+  replyInputContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  replyInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+    maxHeight: 80,
     fontSize: 14,
-    color: '#FF6B00',
-    fontWeight: '500',
+  },
+  replyButton: {
+    backgroundColor: '#FF6B00',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+  },
+  replyButtonDisabled: {
+    opacity: 0.5,
+  },
+  replyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  repliesContainer: {
+    marginTop: 8,
+    paddingLeft: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: '#f0f0f0',
+  },
+  emptyContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 4,
   },
   inputContainer: {
     flexDirection: 'row',

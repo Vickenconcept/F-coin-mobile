@@ -12,6 +12,7 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatusSuccess, AVPlaybackStatus } from 'expo-av';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
@@ -68,6 +69,20 @@ export function ImageZoomViewer({
   }, [visible, initialIndex]);
 
   // Don't set loading state when switching - only show loading when actually loading
+
+  // Handle Android back button
+  useEffect(() => {
+    if (!visible) return;
+
+    const backAction = () => {
+      onClose();
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [visible, onClose]);
 
   // Auto-hide controls after 3 seconds
   useEffect(() => {

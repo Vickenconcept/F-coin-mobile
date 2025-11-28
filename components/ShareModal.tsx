@@ -11,6 +11,7 @@ import {
   Platform,
   Share as RNShare,
   Clipboard,
+  BackHandler,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Toast from 'react-native-toast-message';
@@ -49,6 +50,20 @@ export function ShareModal({
       setShareComment('');
     }
   }, [visible]);
+
+  // Handle Android back button
+  useEffect(() => {
+    if (!visible) return;
+
+    const backAction = () => {
+      onClose();
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [visible, onClose]);
 
   const defaultPostUrl = postUrl || `https://fcoin.app/posts/${post.id}`;
   const shareText = post.content && post.content.trim()

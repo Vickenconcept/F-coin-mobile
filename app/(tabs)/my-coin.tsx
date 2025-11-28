@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  BackHandler,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { apiClient } from '../../lib/apiClient';
@@ -226,6 +227,36 @@ export default function MyCoinScreen() {
 
   const sortedCoins = [...coins].sort((a, b) => a.symbol.localeCompare(b.symbol));
   const hasCoins = sortedCoins.length > 0;
+
+  // Handle Android back button for Top Up Modal
+  useEffect(() => {
+    if (!isTopUpModalVisible) return;
+
+    const backAction = () => {
+      setIsTopUpModalVisible(false);
+      setSelectedCoin(null);
+      setTopUpAmount('');
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [isTopUpModalVisible]);
+
+  // Handle Android back button for Launch Coin Modal
+  useEffect(() => {
+    if (!isLaunchCoinModalVisible) return;
+
+    const backAction = () => {
+      setIsLaunchCoinModalVisible(false);
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [isLaunchCoinModalVisible]);
 
   const openTopUpModal = (coin: CreatorCoin) => {
     setSelectedCoin(coin);

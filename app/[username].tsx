@@ -15,6 +15,7 @@ import {
   Animated,
   TextInput,
   Linking,
+  BackHandler,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -333,6 +334,20 @@ export default function UserProfileScreen() {
       clearTimeout(usernameCheckTimeoutRef.current);
     }
   }, []);
+
+  // Handle Android back button for Edit Profile Modal
+  useEffect(() => {
+    if (!editProfileModalVisible) return;
+
+    const backAction = () => {
+      closeEditProfileModal();
+      return true; // Prevent default back action
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [editProfileModalVisible, closeEditProfileModal]);
 
   // Username validation for edit modal
   useEffect(() => {
