@@ -201,12 +201,12 @@ export function FeedPostItem({
         )}
 
         {/* Media */}
-        {/* {post.media && Array.isArray(post.media) && post.media.length > 0 && (
+        {post.media && Array.isArray(post.media) && post.media.length > 0 && (
           <FeedMediaGrid 
             media={post.media} 
             onImagePress={onImagePress}
           />
-        )} */}
+        )}
 
         {/* Share Header - if this is a shared post */}
         {post.shared_post && (

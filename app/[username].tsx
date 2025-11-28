@@ -1578,13 +1578,13 @@ export default function UserProfileScreen() {
                   <FontAwesome name="comment-o" size={20} color="#666" />
                   <Text style={styles.actionText}>{post.comments_count}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => handleShare(post)}
-                >
-                  <FontAwesome name="share" size={20} color="#666" />
-                  <Text style={styles.actionText}>{post.shares_count}</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleShare(post)}
+                  >
+                    <FontAwesome name="share" size={20} color="#666" />
+                    <Text style={styles.actionText}>{post.shares_count}</Text>
+                  </TouchableOpacity>
                 {post.reward_enabled && (
                   <View style={styles.rewardBadge}>
                     <FontAwesome name="dollar" size={14} color="#FF6B00" />
