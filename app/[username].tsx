@@ -144,6 +144,11 @@ export default function UserProfileScreen() {
   const [followersHasMore, setFollowersHasMore] = useState(true);
   const [followingHasMore, setFollowingHasMore] = useState(true);
   
+  // Posts pagination states
+  const [postsPage, setPostsPage] = useState(1);
+  const [postsLoadingMore, setPostsLoadingMore] = useState(false);
+  const [postsHasMore, setPostsHasMore] = useState(false);
+  
   // Profile editing states
   const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -179,6 +184,9 @@ export default function UserProfileScreen() {
 
     setIsLoading(true);
     setError(null);
+    // Reset pagination when loading profile
+    setPostsPage(1);
+    setPostsHasMore(false);
 
     try {
       const params = new URLSearchParams();
@@ -192,6 +200,13 @@ export default function UserProfileScreen() {
 
       if (response.ok && response.data) {
         setProfile(response.data);
+        // Update pagination state
+        if (response.data.posts_pagination) {
+          setPostsPage(1);
+          setPostsHasMore(response.data.posts_pagination.current_page < response.data.posts_pagination.last_page);
+        } else {
+          setPostsHasMore(false);
+        }
       } else {
         setError(response.errors?.[0]?.detail || 'Unable to load profile');
         setProfile(null);
@@ -707,6 +722,65 @@ export default function UserProfileScreen() {
     }
   }, [postToShare]);
 
+  const loadMorePosts = useCallback(async () => {
+    if (!profile || postsLoadingMore || !postsHasMore) return;
+
+    const nextPage = postsPage + 1;
+    setPostsLoadingMore(true);
+
+    try {
+      const params = new URLSearchParams();
+      params.set('filter', activeFilter);
+      params.set('page', String(nextPage));
+      params.set('per_page', '10');
+
+      const response = await apiClient.get<ProfileData>(
+        `/v1/profiles/${username}?${params.toString()}`
+      );
+
+      if (response.ok && response.data) {
+        const newPosts = response.data.recent_posts || [];
+        
+        // Merge new posts with existing ones, avoiding duplicates
+        setProfile((prev) => {
+          if (!prev) return prev;
+          const existingIds = new Set(prev.recent_posts.map(p => p.id));
+          const uniqueNewPosts = newPosts.filter(p => !existingIds.has(p.id));
+          
+          return {
+            ...prev,
+            recent_posts: [...prev.recent_posts, ...uniqueNewPosts],
+            posts_pagination: response.data?.posts_pagination || prev.posts_pagination,
+          };
+        });
+
+        // Update pagination state
+        if (response.data.posts_pagination) {
+          setPostsPage(nextPage);
+          setPostsHasMore(response.data.posts_pagination.current_page < response.data.posts_pagination.last_page);
+        } else {
+          setPostsHasMore(false);
+        }
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: 'Failed to load more posts',
+          visibilityTime: 3000,
+        });
+      }
+    } catch (error) {
+      console.error('[Profile] loadMorePosts error', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to load more posts',
+        visibilityTime: 3000,
+      });
+    } finally {
+      setPostsLoadingMore(false);
+    }
+  }, [profile, username, activeFilter, postsPage, postsLoadingMore, postsHasMore]);
 
   const updateLocalPost = useCallback((updatedPost: FeedPost) => {
     setProfile((prev) => {
@@ -1581,6 +1655,23 @@ export default function UserProfileScreen() {
                 </View>
               ))
             )}
+            
+            {/* Load More Posts Button */}
+            {postsHasMore && (
+              <View style={styles.loadMoreContainer}>
+                <TouchableOpacity
+                  style={styles.loadMoreButton}
+                  onPress={loadMorePosts}
+                  disabled={postsLoadingMore}
+                >
+                  {postsLoadingMore ? (
+                    <ActivityIndicator size="small" color="#FF6B00" />
+                  ) : (
+                    <Text style={styles.loadMoreText}>Load more posts</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </>
         ) : activeSection === 'followers' ? (
           renderFollowList('followers')
@@ -2044,13 +2135,18 @@ const styles = StyleSheet.create({
     padding: 40,
     alignItems: 'center',
   },
+  loadMoreContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
   loadMoreButton: {
-    marginTop: 8,
     paddingVertical: 12,
+    paddingHorizontal: 24,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#f0f0f0',
-    borderRadius: 12,
+    borderColor: '#FF6B00',
+    borderRadius: 8,
     backgroundColor: '#fff',
   },
   loadMoreText: {
