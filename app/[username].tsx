@@ -16,6 +16,7 @@ import {
   TextInput,
   Linking,
   BackHandler,
+  DeviceEventEmitter,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -189,10 +190,12 @@ export default function UserProfileScreen() {
     setPostsHasMore(false);
 
     try {
+      // Backend pagination: Request page 1 from backend
+      // Backend returns only 10 posts, not all user posts
       const params = new URLSearchParams();
       params.set('filter', activeFilter);
-      params.set('page', '1');
-      params.set('per_page', '10');
+      params.set('page', '1'); // Backend handles pagination
+      params.set('per_page', '10'); // Backend returns only 10 posts per request
 
       const response = await apiClient.get<ProfileData>(
         `/v1/profiles/${username}?${params.toString()}`
@@ -729,10 +732,12 @@ export default function UserProfileScreen() {
     setPostsLoadingMore(true);
 
     try {
+      // Backend pagination: Request specific page from backend
+      // Each call fetches only 10 posts from the database, not all posts
       const params = new URLSearchParams();
       params.set('filter', activeFilter);
-      params.set('page', String(nextPage));
-      params.set('per_page', '10');
+      params.set('page', String(nextPage)); // Request next page from backend
+      params.set('per_page', '10'); // Backend returns only 10 posts per page
 
       const response = await apiClient.get<ProfileData>(
         `/v1/profiles/${username}?${params.toString()}`
@@ -1343,6 +1348,30 @@ export default function UserProfileScreen() {
 
         {activeSection === 'posts' ? (
           <>
+            {/* Create Post Button - Only for current user */}
+            {profile.is_current_user && (
+              <View style={styles.createPostContainer}>
+                <TouchableOpacity
+                  style={styles.createPostButton}
+                  onPress={() => {
+                    // Navigate to feed with compose param and also emit event as backup
+                    router.push({
+                      pathname: '/(tabs)/feed',
+                      params: { compose: 'true', trigger: Date.now().toString() },
+                    } as any);
+                    // Also emit event after navigation completes to ensure it opens
+                    setTimeout(() => {
+                      DeviceEventEmitter.emit('openFeedComposer');
+                    }, 500);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <FontAwesome name="plus" size={18} color="#fff" />
+                  <Text style={styles.createPostButtonText}>Create Post</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            
             {/* Filter Tabs */}
             <View style={styles.filterContainer}>
               <TouchableOpacity
@@ -2187,6 +2216,27 @@ const styles = StyleSheet.create({
   },
   followButtonTextFollowing: {
     color: '#666',
+  },
+  createPostContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  createPostButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF6B00',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    gap: 8,
+  },
+  createPostButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   filterContainer: {
     flexDirection: 'row',
