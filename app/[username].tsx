@@ -27,7 +27,6 @@ import { MentionText } from '../components/MentionText';
 import { ImageZoomViewer } from '../components/ImageZoomViewer';
 import { ShareModal } from '../components/ShareModal';
 import { Video, ResizeMode } from 'expo-av';
-import { Clipboard } from 'react-native';
 
 type FeedPost = {
   id: string;
@@ -651,35 +650,29 @@ export default function UserProfileScreen() {
     setShareModalVisible(true);
   };
 
-  const handleCopyPostLink = (post: FeedPost) => {
-    const postUrl = `https://fcoin.app/posts/${post.id}`;
-    Clipboard.setString(postUrl);
-    Toast.show({
-      type: 'success',
-      text1: 'Link Copied',
-      text2: 'Post link copied to clipboard!',
-      visibilityTime: 2000,
-    });
-  };
+  const handleShareToTimelineStable = useCallback(async (comment?: string) => {
+    if (!postToShare) {
+      throw new Error('Post to share is not available');
+    }
 
-  const handleShareToTimeline = async (postId: string, comment?: string) => {
     try {
-      const response = await apiClient.post<{ 
+      const response = await apiClient.request<{ 
         id: string; 
         shares_count: number;
         shared_post?: FeedPost;
-      }>(
-        `/v1/feed/posts/${postId}/share`,
-        { comment, share_to_timeline: true }
-      );
+      }>(`/v1/feed/posts/${postToShare.id}/share`, {
+        method: 'POST',
+        data: { comment, share_to_timeline: true }
+      });
 
       if (response.ok && response.data) {
+        // Update the post's shares count
         setProfile((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
             recent_posts: prev.recent_posts.map((p) =>
-              p.id === postId
+              p.id === postToShare.id
                 ? { ...p, shares_count: response.data!.shares_count }
                 : p
             ),
@@ -693,23 +686,27 @@ export default function UserProfileScreen() {
           visibilityTime: 2000,
         });
       } else {
+        const errorMessage = response.errors?.[0]?.detail || 'Failed to share post';
         Toast.show({
           type: 'error',
           text1: 'Error',
-          text2: response.errors?.[0]?.detail || 'Failed to share post',
+          text2: errorMessage,
           visibilityTime: 3000,
         });
+        throw new Error(errorMessage);
       }
     } catch (error) {
-      console.error('Share error:', error);
+      console.error('Share to timeline error:', error);
       Toast.show({
         type: 'error',
         text1: 'Error',
-        text2: 'Failed to share post',
+        text2: 'Failed to share post. Please try again.',
         visibilityTime: 3000,
       });
+      throw error; // Re-throw so ShareModal knows it failed
     }
-  };
+  }, [postToShare]);
+
 
   const updateLocalPost = useCallback((updatedPost: FeedPost) => {
     setProfile((prev) => {
@@ -1478,21 +1475,13 @@ export default function UserProfileScreen() {
                   <FontAwesome name="comment-o" size={20} color="#666" />
                   <Text style={styles.actionText}>{post.comments_count}</Text>
                 </TouchableOpacity>
-                <View style={styles.shareActions}>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleShare(post)}
-                  >
-                    <FontAwesome name="share" size={20} color="#666" />
-                    <Text style={styles.actionText}>{post.shares_count}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.copyLinkButton}
-                    onPress={() => handleCopyPostLink(post)}
-                  >
-                    <FontAwesome name="link" size={16} color="#666" />
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => handleShare(post)}
+                >
+                  <FontAwesome name="share" size={20} color="#666" />
+                  <Text style={styles.actionText}>{post.shares_count}</Text>
+                </TouchableOpacity>
                 {post.reward_enabled && (
                   <View style={styles.rewardBadge}>
                     <FontAwesome name="dollar" size={14} color="#FF6B00" />
@@ -1813,6 +1802,19 @@ export default function UserProfileScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Share Modal */}
+      {postToShare && (
+        <ShareModal
+          visible={shareModalVisible}
+          onClose={() => {
+            setShareModalVisible(false);
+            setPostToShare(null);
+          }}
+          post={postToShare}
+          onShareToTimeline={handleShareToTimelineStable}
+        />
+      )}
     </View>
   );
 }
@@ -2241,14 +2243,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FF6B00',
     fontWeight: '600',
-  },
-  shareActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  copyLinkButton: {
-    padding: 4,
   },
   postManagement: {
     marginTop: 16,

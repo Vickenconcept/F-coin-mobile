@@ -134,13 +134,78 @@ export default function FeedScreen() {
   const handleShareToTimelineStable = useCallback(async (comment?: string) => {
     console.log('🎯 Feed: STABLE onShareToTimeline called with comment:', comment);
     console.log('🎯 Feed: postToShare.id:', postToShare?.id);
+    
     if (!postToShare) {
       console.error('❌ Feed: postToShare is null!');
       throw new Error('Post to share is not available');
     }
-    await handleShareToTimeline(postToShare.id, comment);
-    console.log('✅ Feed: STABLE handleShareToTimeline completed');
-  }, [postToShare, handleShareToTimeline]);
+
+    try {
+      console.log('📤 Feed: Making API request to share endpoint');
+      const response = await apiClient.request<{ 
+        id: string; 
+        shares_count: number;
+        shared_post?: FeedPost;
+      }>(`/v1/feed/posts/${postToShare.id}/share`, {
+        method: 'POST',
+        data: { comment, share_to_timeline: true }
+      });
+
+      console.log('📥 Feed: API response received:', { ok: response.ok, status: response.status, hasData: !!response.data });
+
+      if (response.ok && response.data) {
+        // Update the post's shares count in the feed
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postToShare.id
+              ? { ...p, shares_count: response.data!.shares_count }
+              : p
+          )
+        );
+        
+        // If shared to timeline, add the new post to the feed
+        if (response.data.shared_post) {
+          setPosts((prev) => [response.data!.shared_post!, ...prev]);
+        }
+
+        // Also update selectedPost if it's the same post
+        if (selectedPost && selectedPost.id === postToShare.id) {
+          setSelectedPost({
+            ...selectedPost,
+            shares_count: response.data.shares_count,
+          });
+        }
+
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'Post shared to your timeline!',
+          visibilityTime: 2000,
+        });
+
+        console.log('✅ Feed: STABLE handleShareToTimeline completed successfully');
+      } else {
+        const errorMessage = response.errors?.[0]?.detail || 'Failed to share post';
+        console.error('❌ Feed: Share failed', response.errors);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: errorMessage,
+          visibilityTime: 3000,
+        });
+        throw new Error(errorMessage);
+      }
+    } catch (error) {
+      console.error('❌ Feed: Share to timeline error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to share post. Please try again.',
+        visibilityTime: 3000,
+      });
+      throw error; // Re-throw so ShareModal knows it failed
+    }
+  }, [postToShare, selectedPost, setPosts]);
 
   const handleImagePress = useCallback((post: FeedPost, imageIndex: number) => {
     if (post.media && Array.isArray(post.media)) {

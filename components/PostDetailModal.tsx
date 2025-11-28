@@ -55,6 +55,7 @@ export function PostDetailModal({
   const [loadingComments, setLoadingComments] = useState(false);
   const [likingComment, setLikingComment] = useState<string | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [isSharingToTimeline, setIsSharingToTimeline] = useState(false);
 
   // Sync displayPost with post prop when modal opens or post ID changes
   useEffect(() => {
@@ -62,6 +63,66 @@ export function PostDetailModal({
       setDisplayPost(post);
     }
   }, [visible, post?.id]);
+
+  // Handle share to timeline
+  const handleShareToTimeline = useCallback(async (comment?: string) => {
+    if (!displayPost || isSharingToTimeline) {
+      console.log('PostDetailModal: Cannot share - no post or already sharing');
+      return;
+    }
+
+    console.log('PostDetailModal: Sharing to timeline', { postId: displayPost.id, comment });
+
+    setIsSharingToTimeline(true);
+    try {
+      const response = await apiClient.request<{ 
+        id: string; 
+        shares_count: number;
+        shared_post?: FeedPost;
+      }>(`/v1/feed/posts/${displayPost.id}/share`, {
+        method: 'POST',
+        data: { comment, share_to_timeline: true }
+      });
+
+      console.log('PostDetailModal: Share response', { ok: response.ok, hasData: !!response.data });
+
+      if (response.ok && response.data) {
+        // Update the post's shares count
+        setDisplayPost({
+          ...displayPost,
+          shares_count: response.data.shares_count,
+        } as FeedPost);
+
+        // Update parent
+        onUpdatePost({
+          shares_count: response.data.shares_count,
+        });
+
+        // ShareModal will show success toast and close itself
+      } else {
+        const errorMessage = response.errors?.[0]?.detail || 'Failed to share post';
+        console.error('PostDetailModal: Share failed', response.errors);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: errorMessage,
+          visibilityTime: 3000,
+        });
+        throw new Error(errorMessage);
+      }
+    } catch (error) {
+      console.error('PostDetailModal: Share to timeline error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to share post. Please try again.',
+        visibilityTime: 3000,
+      });
+      throw error; // Re-throw so ShareModal knows it failed
+    } finally {
+      setIsSharingToTimeline(false);
+    }
+  }, [displayPost, isSharingToTimeline, onUpdatePost]);
 
   // Handle post like with optimistic update
   const handlePostLike = useCallback(() => {
@@ -633,12 +694,7 @@ export function PostDetailModal({
           visible={shareModalVisible}
           onClose={() => setShareModalVisible(false)}
           post={displayPost as any}
-          onShareToTimeline={async () => {
-            setShareModalVisible(false);
-            if (displayPost) {
-              onShare(displayPost);
-            }
-          }}
+          onShareToTimeline={handleShareToTimeline}
         />
       </KeyboardAvoidingView>
     </Modal>

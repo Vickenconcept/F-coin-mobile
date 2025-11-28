@@ -10,7 +10,6 @@ import {
 import { Video, ResizeMode } from 'expo-av';
 import { FeedMediaGrid } from './FeedMediaGrid';
 import { MentionText } from './MentionText';
-import { ShareModal } from './ShareModal';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { FeedPost } from '../hooks/useFeed';
 
@@ -61,8 +60,6 @@ export function FeedPostItem({
     console.error('FeedPostItem: Invalid post data', post);
     return null;
   }
-  const [shareModalVisible, setShareModalVisible] = useState(false);
-
   const handleLike = useCallback(() => {
     if (!isLiking) {
       onLike(post.id);
@@ -74,8 +71,8 @@ export function FeedPostItem({
   }, [post, onComment]);
 
   const handleShare = useCallback(() => {
-    setShareModalVisible(true);
-  }, []);
+    onShare(post);
+  }, [post, onShare]);
 
 
   const formatTimeAgo = useCallback((dateString: string) => {
@@ -112,9 +109,14 @@ export function FeedPostItem({
             style={styles.sharedAvatar}
           />
           <View>
-            <Text style={styles.sharedDisplayName}>
-              {sharedPost.user.display_name || sharedPost.user.username}
-            </Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.sharedDisplayName}>
+                {sharedPost.user.display_name || sharedPost.user.username}
+              </Text>
+              {sharedPost.user.verified_creator && (
+                <FontAwesome name="check-circle" size={14} color="#1DA1F2" style={styles.verifiedIcon} />
+              )}
+            </View>
             <Text style={styles.sharedUsername}>@{sharedPost.user.username}</Text>
           </View>
         </TouchableOpacity>
@@ -164,9 +166,14 @@ export function FeedPostItem({
             style={styles.avatar}
           />
           <View>
-            <Text style={styles.displayName}>
-              {post.user.display_name || post.user.username}
-            </Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.displayName}>
+                {post.user.display_name || post.user.username}
+              </Text>
+              {post.user.verified_creator && (
+                <FontAwesome name="check-circle" size={14} color="#1DA1F2" style={styles.verifiedIcon} />
+              )}
+            </View>
             <Text style={styles.username}>@{post.user.username}</Text>
           </View>
         </TouchableOpacity>
@@ -257,16 +264,6 @@ export function FeedPostItem({
         </TouchableOpacity>
       </View>
 
-      {/* Share Modal */}
-      <ShareModal
-        visible={shareModalVisible}
-        onClose={() => setShareModalVisible(false)}
-        post={post}
-        onShareToTimeline={async (comment) => {
-          // Let ShareModal handle closing
-          onShare(post);
-        }}
-      />
     </View>
   );
 }
@@ -403,6 +400,13 @@ const styles = StyleSheet.create({
     color: '#FF6B00',
     fontWeight: '600',
     marginTop: 4,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  verifiedIcon: {
+    marginLeft: 4,
   },
   shareHeader: {
     paddingVertical: 8,

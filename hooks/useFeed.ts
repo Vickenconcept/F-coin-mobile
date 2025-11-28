@@ -17,6 +17,7 @@ export type FeedPost = {
     username: string;
     display_name: string | null;
     avatar_url: string | null;
+    verified_creator?: boolean;
   };
   media: Array<{
     id: string;
