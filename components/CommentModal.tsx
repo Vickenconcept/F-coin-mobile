@@ -77,6 +77,7 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
   const [commenting, setCommenting] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
   const [likingComment, setLikingComment] = useState<string | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
 
   const loadComments = useCallback(async () => {
     if (!post) return;
@@ -114,6 +115,7 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
       setNewComment('');
       setReplyContent({});
       setReplyingTo(null);
+      setExpandedReplies({});
     }
   }, [visible, post, loadComments]);
 
@@ -440,14 +442,34 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
         )}
 
         {/* Replies */}
-        {comment.replies && comment.replies.length > 0 && (
-          <View style={styles.repliesContainer}>
-            {comment.replies.map((reply: any) => renderComment(reply, true))}
-          </View>
-        )}
+        {comment.replies && comment.replies.length > 0 && (() => {
+          const REPLIES_LIMIT = 5;
+          const hasMoreReplies = comment.replies.length > REPLIES_LIMIT;
+          const isExpanded = expandedReplies[comment.id] || false;
+          const displayedReplies = isExpanded 
+            ? comment.replies 
+            : comment.replies.slice(0, REPLIES_LIMIT);
+          const remainingCount = comment.replies.length - REPLIES_LIMIT;
+
+          return (
+            <View style={styles.repliesContainer}>
+              {displayedReplies.map((reply: any) => renderComment(reply, true))}
+              {hasMoreReplies && !isExpanded && (
+                <TouchableOpacity
+                  style={styles.viewMoreReplies}
+                  onPress={() => setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }))}
+                >
+                  <Text style={styles.viewMoreRepliesText}>
+                    View {remainingCount} more {remainingCount === 1 ? 'reply' : 'replies'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })()}
       </View>
     </View>
-  ), [replyingTo, replyContent, commenting, handleLikeComment, handleSubmitComment, formatTimeAgo]);
+  ), [replyingTo, replyContent, commenting, handleLikeComment, handleSubmitComment, formatTimeAgo, expandedReplies]);
 
   if (!post) return null;
 
@@ -649,6 +671,16 @@ const styles = StyleSheet.create({
   },
   repliesContainer: {
     marginTop: 12,
+  },
+  viewMoreReplies: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  viewMoreRepliesText: {
+    color: '#FF6B00',
+    fontSize: 14,
+    fontWeight: '600',
   },
   inputContainer: {
     flexDirection: 'row',

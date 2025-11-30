@@ -290,7 +290,7 @@ export default function ProfileScreen() {
   };
 
   const handleCopyProfileLink = async () => {
-    const profileUrl = user?.username ? `https://fcoin.app/${user.username}` : '';
+    const profileUrl = user?.username ? `https://phanrise.com/${user.username}` : '';
     if (!profileUrl) return;
     
     await Clipboard.setStringAsync(profileUrl);

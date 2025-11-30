@@ -65,7 +65,7 @@ export function ShareModal({
     return () => backHandler.remove();
   }, [visible, onClose]);
 
-  const defaultPostUrl = postUrl || `https://fcoin.app/posts/${post.id}`;
+  const defaultPostUrl = postUrl || `https://phanrise.com/posts/${post.id}`;
   const shareText = post.content && post.content.trim()
     ? `${post.user.display_name || post.user.username}: ${post.content.substring(0, 100)}${post.content.length > 100 ? '...' : ''}`
     : `Check out this post by ${post.user.display_name || post.user.username}`;

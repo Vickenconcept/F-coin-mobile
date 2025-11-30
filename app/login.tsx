@@ -60,7 +60,7 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
-          <Text style={styles.title}>Welcome to FanCoin</Text>
+          <Text style={styles.title}>Welcome to Phanrise</Text>
           <Text style={styles.subtitle}>Sign in to your account</Text>
 
           <View style={styles.form}>

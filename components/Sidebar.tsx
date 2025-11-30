@@ -53,7 +53,7 @@ export function Sidebar() {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Logo/Brand */}
         <View style={styles.logoContainer}>
-          <Text style={styles.logo}>FCoin</Text>
+          <Text style={styles.logo}>Phanrise</Text>
         </View>
 
         {/* Menu Items */}

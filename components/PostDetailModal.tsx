@@ -56,6 +56,7 @@ export function PostDetailModal({
   const [likingComment, setLikingComment] = useState<string | null>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [isSharingToTimeline, setIsSharingToTimeline] = useState(false);
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
 
   // Sync displayPost with post prop when modal opens or post ID changes
   useEffect(() => {
@@ -191,6 +192,7 @@ export function PostDetailModal({
       setNewComment('');
       setReplyContent({});
       setReplyingTo(null);
+      setExpandedReplies({});
     }
   }, [visible, displayPost?.id, loadComments]);
 
@@ -548,14 +550,34 @@ export function PostDetailModal({
         )}
 
         {/* Replies */}
-        {comment.replies && comment.replies.length > 0 && (
-          <View style={styles.repliesContainer}>
-            {comment.replies.map((reply: any) => renderComment(reply, true))}
-          </View>
-        )}
+        {comment.replies && comment.replies.length > 0 && (() => {
+          const REPLIES_LIMIT = 5;
+          const hasMoreReplies = comment.replies.length > REPLIES_LIMIT;
+          const isExpanded = expandedReplies[comment.id] || false;
+          const displayedReplies = isExpanded 
+            ? comment.replies 
+            : comment.replies.slice(0, REPLIES_LIMIT);
+          const remainingCount = comment.replies.length - REPLIES_LIMIT;
+
+          return (
+            <View style={styles.repliesContainer}>
+              {displayedReplies.map((reply: any) => renderComment(reply, true))}
+              {hasMoreReplies && !isExpanded && (
+                <TouchableOpacity
+                  style={styles.viewMoreReplies}
+                  onPress={() => setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }))}
+                >
+                  <Text style={styles.viewMoreRepliesText}>
+                    View {remainingCount} more {remainingCount === 1 ? 'reply' : 'replies'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })()}
       </View>
     </View>
-  ), [replyingTo, replyContent, commenting, likingComment, handleLikeComment, handleSubmitComment, formatTimeAgo]);
+  ), [replyingTo, replyContent, commenting, likingComment, handleLikeComment, handleSubmitComment, formatTimeAgo, expandedReplies]);
 
   if (!displayPost) return null;
 

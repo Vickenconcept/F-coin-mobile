@@ -200,8 +200,8 @@ export function FeedPostItem({
           </TouchableOpacity>
         )}
 
-        {/* Media */}
-        {post.media && Array.isArray(post.media) && post.media.length > 0 && (
+        {/* Media - Only show if this is NOT a shared post (to avoid duplicate media) */}
+        {!post.shared_post && post.media && Array.isArray(post.media) && post.media.length > 0 && (
           <FeedMediaGrid 
             media={post.media} 
             onImagePress={onImagePress}

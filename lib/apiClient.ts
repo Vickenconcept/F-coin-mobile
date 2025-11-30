@@ -2,7 +2,7 @@ import axios, { AxiosError, AxiosInstance } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 
-const TOKEN_KEY = 'fancoin_auth_token';
+const TOKEN_KEY = 'phanrise_auth_token';
 
 // Get API base URL from environment or use default
 // Expo reads env vars from Constants.expoConfig.extra (from app.config.js) or process.env
