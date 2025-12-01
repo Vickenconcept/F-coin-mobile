@@ -18,6 +18,7 @@ import {
   BackHandler,
   DeviceEventEmitter,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../lib/apiClient';
@@ -111,6 +112,7 @@ type FollowEntry = {
 };
 
 export default function UserProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { username } = useLocalSearchParams<{ username: string }>();
   const router = useRouter();
   const { user } = useAuth();
@@ -1174,7 +1176,7 @@ export default function UserProfileScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <FontAwesome name="arrow-left" size={20} color="#000" />
           </TouchableOpacity>
@@ -1751,14 +1753,14 @@ export default function UserProfileScreen() {
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+            <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 16) }]}>
               <Text style={styles.modalTitle}>Edit Profile</Text>
               <TouchableOpacity onPress={closeEditProfileModal}>
                 <FontAwesome name="times" size={24} color="#000" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) }}>
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Display Name</Text>
                 <TextInput
@@ -1896,29 +1898,31 @@ export default function UserProfileScreen() {
               </View>
             </ScrollView>
 
-            <TouchableOpacity
-              style={[
-                styles.modalSaveButton,
-                (isSavingProfile ||
+            <View style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+              <TouchableOpacity
+                style={[
+                  styles.modalSaveButton,
+                  (isSavingProfile ||
+                    !editUsername.trim() ||
+                    (editUsername.trim() !== (profile?.username ?? '') &&
+                      (usernameStatus === 'checking' || usernameStatus === 'unavailable' || usernameStatus === 'error'))) &&
+                    styles.modalSaveButtonDisabled,
+                ]}
+                onPress={handleSaveProfile}
+                disabled={
+                  isSavingProfile ||
                   !editUsername.trim() ||
                   (editUsername.trim() !== (profile?.username ?? '') &&
-                    (usernameStatus === 'checking' || usernameStatus === 'unavailable' || usernameStatus === 'error'))) &&
-                  styles.modalSaveButtonDisabled,
-              ]}
-              onPress={handleSaveProfile}
-              disabled={
-                isSavingProfile ||
-                !editUsername.trim() ||
-                (editUsername.trim() !== (profile?.username ?? '') &&
-                  (usernameStatus === 'checking' || usernameStatus === 'unavailable' || usernameStatus === 'error'))
-              }
-            >
-              {isSavingProfile ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.modalSaveButtonText}>Save Changes</Text>
-              )}
-            </TouchableOpacity>
+                    (usernameStatus === 'checking' || usernameStatus === 'unavailable' || usernameStatus === 'error'))
+                }
+              >
+                {isSavingProfile ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalSaveButtonText}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>

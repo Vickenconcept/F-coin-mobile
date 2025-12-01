@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { apiClient } from '../lib/apiClient';
 import Toast from 'react-native-toast-message';
@@ -27,6 +28,7 @@ type DiscoverUser = {
 };
 
 export default function DiscoverScreen() {
+  const insets = useSafeAreaInsets();
   const [users, setUsers] = useState<DiscoverUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -144,7 +146,7 @@ export default function DiscoverScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
         <Text style={styles.title}>Discover Creators</Text>
         <Text style={styles.subtitle}>Find and follow creators to earn coins</Text>
       </View>

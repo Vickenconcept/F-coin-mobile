@@ -14,6 +14,7 @@ import {
   Linking,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { apiClient } from '../../lib/apiClient';
 import Toast from 'react-native-toast-message';
@@ -54,6 +55,7 @@ type WalletData = {
 };
 
 export default function MyCoinScreen() {
+  const insets = useSafeAreaInsets();
   const { user, refreshUser } = useAuth();
   const router = useRouter();
   const [coins, setCoins] = useState<CreatorCoin[]>([]);
@@ -691,7 +693,7 @@ export default function MyCoinScreen() {
               e.stopPropagation();
             }}
           >
-            <View style={styles.modalHeader}>
+            <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 16) }]}>
               <Text style={styles.modalTitle}>Fund {selectedCoin?.symbol || 'Coin'}</Text>
               <TouchableOpacity onPress={() => setIsTopUpModalVisible(false)}>
                 <FontAwesome name="times" size={24} color="#000" />
@@ -752,7 +754,7 @@ export default function MyCoinScreen() {
                   </View>
                 )}
 
-                <View style={styles.modalButtonContainer}>
+                <View style={[styles.modalButtonContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
                   <TouchableOpacity
                     style={[styles.modalSubmitButton, (!topUpAmount || parseFloat(topUpAmount) < 1 || isTopUpLoading) && styles.modalSubmitButtonDisabled]}
                     onPress={handleTopUp}
@@ -791,7 +793,7 @@ export default function MyCoinScreen() {
               e.stopPropagation();
             }}
           >
-            <View style={styles.modalHeader}>
+            <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 16) }]}>
               <Text style={styles.modalTitle}>Create Your Coin</Text>
               <TouchableOpacity onPress={() => setIsLaunchCoinModalVisible(false)}>
                 <FontAwesome name="times" size={24} color="#000" />
@@ -832,17 +834,19 @@ export default function MyCoinScreen() {
                   </Text>
                 </View>
 
-                <TouchableOpacity
-                  style={[styles.modalSubmitButton, (!newCoinSymbol.trim() || isCreatingCoin) && styles.modalSubmitButtonDisabled]}
-                  onPress={handleCreateCoin}
-                  disabled={!newCoinSymbol.trim() || isCreatingCoin}
-                >
-                  {isCreatingCoin ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.modalSubmitButtonText}>Create Coin</Text>
-                  )}
-                </TouchableOpacity>
+                <View style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+                  <TouchableOpacity
+                    style={[styles.modalSubmitButton, (!newCoinSymbol.trim() || isCreatingCoin) && styles.modalSubmitButtonDisabled]}
+                    onPress={handleCreateCoin}
+                    disabled={!newCoinSymbol.trim() || isCreatingCoin}
+                  >
+                    {isCreatingCoin ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.modalSubmitButtonText}>Create Coin</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </ScrollView>
             </KeyboardAvoidingView>
           </View>

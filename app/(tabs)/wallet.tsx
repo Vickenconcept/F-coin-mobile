@@ -14,6 +14,7 @@ import {
   Alert,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { apiClient } from '../../lib/apiClient';
 import Toast from 'react-native-toast-message';
@@ -73,6 +74,7 @@ type UsernameLookupResult = {
 };
 
 export default function WalletScreen() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -735,7 +737,7 @@ export default function WalletScreen() {
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+            <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 16) }]}>
               <Text style={styles.modalTitle}>Send Coins</Text>
               <TouchableOpacity
                 onPress={() => {
@@ -862,23 +864,24 @@ export default function WalletScreen() {
             </ScrollView>
 
             {/* Send Button */}
-            <TouchableOpacity
-              style={[
-                styles.modalSendButton,
-                (isTransferring ||
+            <View style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+              <TouchableOpacity
+                style={[
+                  styles.modalSendButton,
+                  (isTransferring ||
+                    !transferUsername.trim() ||
+                    !transferAmount.trim() ||
+                    usernameCheck !== 'valid') &&
+                    styles.modalSendButtonDisabled,
+                ]}
+                onPress={handleSend}
+                disabled={
+                  isTransferring ||
                   !transferUsername.trim() ||
                   !transferAmount.trim() ||
-                  usernameCheck !== 'valid') &&
-                  styles.modalSendButtonDisabled,
-              ]}
-              onPress={handleSend}
-              disabled={
-                isTransferring ||
-                !transferUsername.trim() ||
-                !transferAmount.trim() ||
-                usernameCheck !== 'valid'
-              }
-            >
+                  usernameCheck !== 'valid'
+                }
+              >
               {isTransferring ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
@@ -887,7 +890,8 @@ export default function WalletScreen() {
                   <Text style={styles.modalSendButtonText}>Send</Text>
                 </>
               )}
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>

@@ -9,6 +9,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useNotifications, type Notification } from '../../hooks/useNotifications';
@@ -17,6 +18,7 @@ import Toast from 'react-native-toast-message';
 type FilterType = 'all' | 'unread';
 
 export default function NotificationsScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { notifications, unreadCount, isLoading, error, markAsRead, markAllAsRead, refresh } = useNotifications();
   const [filter, setFilter] = useState<FilterType>('all');
@@ -139,7 +141,7 @@ export default function NotificationsScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
         <Text style={styles.headerTitle}>Notifications</Text>
         {unreadCount > 0 && (
           <TouchableOpacity

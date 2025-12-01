@@ -12,6 +12,7 @@ import {
   Platform,
   RefreshControl,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../lib/apiClient';
@@ -52,6 +53,7 @@ type NotificationPreferences = {
 };
 
 export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
   const { user, refreshUser, logout } = useAuth();
   const router = useRouter();
   
@@ -379,7 +381,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
 
