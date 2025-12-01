@@ -12,6 +12,7 @@ import {
   Image,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiClient } from '../lib/apiClient';
 import Toast from 'react-native-toast-message';
 import { FeedMediaGrid } from './FeedMediaGrid';
@@ -44,6 +45,7 @@ export function PostDetailModal({
   isLiking = false,
   isSharing = false,
 }: PostDetailModalProps) {
+  const insets = useSafeAreaInsets();
   // Local state for post to allow optimistic updates
   const [displayPost, setDisplayPost] = useState<FeedPost | null>(post);
   
@@ -592,7 +594,7 @@ export function PostDetailModal({
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <TouchableOpacity onPress={onClose}>
             <FontAwesome name="times" size={24} color="#666" />
           </TouchableOpacity>
@@ -690,7 +692,7 @@ export function PostDetailModal({
         </ScrollView>
 
         {/* Comment Input */}
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <MentionInput
             value={newComment}
             onChangeText={setNewComment}

@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import * as Linking from 'expo-linking';
 import 'react-native-reanimated';
 import Toast from 'react-native-toast-message';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '../context/AuthContext';
@@ -206,11 +207,13 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <SidebarProvider>
-        <RootLayoutNav />
-        <GlobalSidebar />
-      </SidebarProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <SidebarProvider>
+          <RootLayoutNav />
+          <GlobalSidebar />
+        </SidebarProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

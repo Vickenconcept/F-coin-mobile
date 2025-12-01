@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useSidebar } from '../context/SidebarContext';
 
@@ -10,9 +11,10 @@ type GlobalHeaderProps = {
 
 export function GlobalHeader({ title, rightComponent }: GlobalHeaderProps) {
   const { toggleSidebar } = useSidebar();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
       <TouchableOpacity
         style={styles.menuButton}
         onPress={toggleSidebar}

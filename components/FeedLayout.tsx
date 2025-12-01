@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type FeedLayoutProps = {
   children: React.ReactNode;
@@ -7,9 +8,9 @@ type FeedLayoutProps = {
 
 export function FeedLayout({ children }: FeedLayoutProps) {
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       {children}
-    </View>
+    </SafeAreaView>
   );
 }
 

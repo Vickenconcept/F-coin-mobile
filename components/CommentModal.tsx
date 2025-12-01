@@ -13,6 +13,7 @@ import {
   Image,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiClient } from '../lib/apiClient';
 import Toast from 'react-native-toast-message';
 import { MentionText } from './MentionText';
@@ -70,6 +71,7 @@ type CommentModalProps = {
 };
 
 export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentModalProps) {
+  const insets = useSafeAreaInsets();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [replyContent, setReplyContent] = useState<Record<string, string>>({});
@@ -484,7 +486,7 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <TouchableOpacity onPress={onClose}>
             <FontAwesome name="times" size={24} color="#666" />
           </TouchableOpacity>
@@ -509,7 +511,7 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
           )}
         </ScrollView>
 
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <MentionInput
             value={newComment}
             onChangeText={setNewComment}

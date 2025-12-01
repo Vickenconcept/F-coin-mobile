@@ -14,6 +14,7 @@ import {
   Switch,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { apiClient } from '../lib/apiClient';
 import Toast from 'react-native-toast-message';
@@ -37,6 +38,7 @@ export function PostComposer({
   userId, 
   defaultCoinSymbol 
 }: PostComposerProps) {
+  const insets = useSafeAreaInsets();
   const [content, setContent] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'followers' | 'private'>('public');
   const [rewardEnabled, setRewardEnabled] = useState(false);
@@ -359,7 +361,7 @@ export function PostComposer({
         style={styles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <TouchableOpacity onPress={handleClose}>
             <Text style={styles.cancelButton}>Cancel</Text>
           </TouchableOpacity>
