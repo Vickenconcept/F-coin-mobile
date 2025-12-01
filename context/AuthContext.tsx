@@ -7,7 +7,7 @@ type AuthContextType = {
   loading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, password: string, passwordConfirmation: string, role?: 'creator' | 'fan') => Promise<{ success: boolean; error?: string }>;
+  register: (username: string, displayName: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -58,19 +58,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (
-    name: string,
+    username: string,
+    displayName: string,
     email: string,
-    password: string,
-    passwordConfirmation: string,
-    role?: 'creator' | 'fan'
+    password: string
   ) => {
     try {
       const response = await authService.register({
-        name,
-        email,
+        username: username.trim(),
+        display_name: displayName.trim() || undefined,
+        email: email.trim(),
         password,
-        password_confirmation: passwordConfirmation,
-        role,
       });
       if (response.ok && response.data) {
         setUser(response.data.user);

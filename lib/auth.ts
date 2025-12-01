@@ -21,11 +21,11 @@ export type LoginCredentials = {
 };
 
 export type RegisterData = {
-  name: string;
+  username: string;
+  display_name?: string;
   email: string;
   password: string;
-  password_confirmation: string;
-  role?: 'creator' | 'fan';
+  avatar_url?: string;
 };
 
 export type AuthResponse = {

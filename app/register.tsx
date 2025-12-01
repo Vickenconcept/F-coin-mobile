@@ -17,23 +17,34 @@ import { useAuth } from '../context/AuthContext';
 import Toast from 'react-native-toast-message';
 
 export default function RegisterScreen() {
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [passwordConfirmationVisible, setPasswordConfirmationVisible] = useState(false);
-  const [role, setRole] = useState<'creator' | 'fan'>('fan');
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const router = useRouter();
 
   const handleRegister = async () => {
-    if (!name.trim() || !email.trim() || !password.trim() || !passwordConfirmation.trim()) {
+    if (!displayName.trim() || !username.trim() || !email.trim() || !password.trim() || !passwordConfirmation.trim()) {
       Toast.show({
         type: 'error',
         text1: 'Validation Error',
-        text2: 'Please fill in all fields',
+        text2: 'Please fill in all required fields',
+      });
+      return;
+    }
+
+    // Validate username format (alphanumeric, dash, underscore)
+    const usernameRegex = /^[a-zA-Z0-9_-]+$/;
+    if (!usernameRegex.test(username.trim())) {
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Username can only contain letters, numbers, dashes, and underscores',
       });
       return;
     }
@@ -57,7 +68,7 @@ export default function RegisterScreen() {
     }
 
     setLoading(true);
-    const result = await register(name.trim(), email.trim(), password, passwordConfirmation, role);
+    const result = await register(username.trim(), displayName.trim(), email.trim(), password);
     setLoading(false);
 
     if (result.success) {
@@ -89,20 +100,34 @@ export default function RegisterScreen() {
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Full Name</Text>
+              <Text style={styles.label}>Full Name *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter your name"
+                placeholder="Enter your display name"
                 placeholderTextColor="#999"
-                value={name}
-                onChangeText={setName}
+                value={displayName}
+                onChangeText={setDisplayName}
                 autoCapitalize="words"
                 editable={!loading}
               />
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email</Text>
+              <Text style={styles.label}>Username *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="@username"
+                placeholderTextColor="#999"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoComplete="username"
+                editable={!loading}
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter your email"
@@ -166,30 +191,6 @@ export default function RegisterScreen() {
                     size={18}
                     color="#666"
                   />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>I am a...</Text>
-              <View style={styles.roleContainer}>
-                <TouchableOpacity
-                  style={[styles.roleButton, role === 'fan' && styles.roleButtonActive]}
-                  onPress={() => setRole('fan')}
-                  disabled={loading}
-                >
-                  <Text style={[styles.roleButtonText, role === 'fan' && styles.roleButtonTextActive]}>
-                    Fan
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.roleButton, role === 'creator' && styles.roleButtonActive]}
-                  onPress={() => setRole('creator')}
-                  disabled={loading}
-                >
-                  <Text style={[styles.roleButtonText, role === 'creator' && styles.roleButtonTextActive]}>
-                    Creator
-                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -289,31 +290,6 @@ const styles = StyleSheet.create({
   eyeButton: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-  },
-  roleContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  roleButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  roleButtonActive: {
-    backgroundColor: '#FF6B00',
-    borderColor: '#FF6B00',
-  },
-  roleButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-  },
-  roleButtonTextActive: {
-    color: '#fff',
   },
   button: {
     backgroundColor: '#FF6B00',
