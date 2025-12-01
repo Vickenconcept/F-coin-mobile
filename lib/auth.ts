@@ -35,11 +35,13 @@ export type AuthResponse = {
 
 export const authService = {
   async login(credentials: LoginCredentials) {
+    console.log('🔐 Login attempt - calling POST /v1/auth/login');
     const response = await apiClient.post<AuthResponse>(
       '/v1/auth/login',
       credentials,
       true // skipAuth for login
     );
+    console.log('🔐 Login response:', { ok: response.ok, status: response.status });
 
     if (response.ok && response.data?.token) {
       await apiClient.setToken(response.data.token);

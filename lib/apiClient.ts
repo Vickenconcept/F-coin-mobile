@@ -59,6 +59,8 @@ class ApiClient {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
+      maxRedirects: 0, // Don't follow redirects - API should return JSON, not redirects
+      validateStatus: (status) => status < 500, // Don't throw on 4xx errors, handle them ourselves
     });
 
     // Load token from secure storage (async, but we'll handle it)
@@ -69,6 +71,12 @@ class ApiClient {
       async (config) => {
         config.headers = config.headers ?? {};
         const method = (config.method ?? 'get').toLowerCase();
+        
+        // Log every request for debugging
+        console.log(`🔵 Axios Request: ${method.toUpperCase()} ${config.url}`, {
+          hasData: !!config.data,
+          hasAuth: !!config.headers?.Authorization,
+        });
 
         if (this.token && !config.headers.Authorization) {
           config.headers.Authorization = `Bearer ${this.token}`;
@@ -127,10 +135,16 @@ class ApiClient {
       skipAuth?: boolean;
     } = {}
   ): Promise<ApiResponse<T>> {
+    const method = options.method || 'GET';
+    const url = path.startsWith('/') ? path : `/${path}`;
+    
+    // Debug logging
+    console.log(`📤 API Request: ${method} ${url}`, options.data ? { hasData: true } : {});
+    
     try {
       const response = await this.client.request({
-        url: path.startsWith('/') ? path : `/${path}`,
-        method: options.method || 'GET',
+        url,
+        method,
         data: options.data,
         headers: options.skipAuth ? { Authorization: '' } : undefined,
       });

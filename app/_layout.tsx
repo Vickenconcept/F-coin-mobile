@@ -4,6 +4,7 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import * as Linking from 'expo-linking';
 import 'react-native-reanimated';
 import Toast from 'react-native-toast-message';
 
@@ -30,6 +31,100 @@ function RootLayoutNav() {
   const { isAuthenticated, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // Handle deep linking
+  useEffect(() => {
+    // Handle initial URL (app opened from a link)
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink(url);
+      }
+    });
+
+    // Handle deep links while app is running
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const handleDeepLink = (url: string) => {
+    console.log('🔗 Deep link received:', url);
+    
+    try {
+      const parsed = Linking.parse(url);
+      console.log('🔗 Parsed deep link:', parsed);
+      
+      // Handle universal links: https://phanrise.com/posts/{postId}
+      if (parsed.hostname === 'phanrise.com' || parsed.hostname === 'www.phanrise.com') {
+        const pathSegments = parsed.path?.split('/').filter(Boolean) || [];
+        
+        if (pathSegments[0] === 'posts' && pathSegments[1]) {
+          const postId = pathSegments[1];
+          console.log('📱 Opening post:', postId);
+          
+          // Wait for auth to be ready, then navigate
+          if (!loading) {
+            if (isAuthenticated) {
+              router.push(`/posts/${postId}`);
+            } else {
+              // Store the postId to navigate after login
+              router.replace({
+                pathname: '/login',
+                params: { redirect: `/posts/${postId}` },
+              });
+            }
+          }
+          return;
+        }
+        
+        // Handle user profile links: https://phanrise.com/{username}
+        if (pathSegments.length === 1 && pathSegments[0]) {
+          const username = pathSegments[0];
+          console.log('👤 Opening profile:', username);
+          
+          if (!loading) {
+            if (isAuthenticated) {
+              router.push(`/${username}`);
+            } else {
+              router.replace({
+                pathname: '/login',
+                params: { redirect: `/${username}` },
+              });
+            }
+          }
+          return;
+        }
+      }
+      
+      // Handle custom scheme links: mobile://posts/{postId}
+      if (parsed.scheme === 'mobile') {
+        const pathSegments = parsed.path?.split('/').filter(Boolean) || [];
+        
+        if (pathSegments[0] === 'posts' && pathSegments[1]) {
+          const postId = pathSegments[1];
+          console.log('📱 Opening post via custom scheme:', postId);
+          
+          if (!loading) {
+            if (isAuthenticated) {
+              router.push(`/posts/${postId}`);
+            } else {
+              router.replace({
+                pathname: '/login',
+                params: { redirect: `/posts/${postId}` },
+              });
+            }
+          }
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error handling deep link:', error);
+    }
+  };
 
   useEffect(() => {
     if (loading) return;
@@ -70,6 +165,13 @@ function RootLayoutNav() {
         />
         <Stack.Screen 
           name="[username]" 
+          options={{ 
+            headerShown: false,
+            presentation: 'card',
+          }} 
+        />
+        <Stack.Screen 
+          name="posts/[postId]" 
           options={{ 
             headerShown: false,
             presentation: 'card',

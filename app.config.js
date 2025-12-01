@@ -15,8 +15,8 @@ console.log('🔗 API Base URL from config:', apiBaseUrl);
 
 module.exports = {
   expo: {
-    name: 'mobile',
-    slug: 'mobile',
+    name: 'Phanrise',
+    slug: 'phanrise',
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/images/icon.png',
@@ -30,6 +30,8 @@ module.exports = {
     },
     ios: {
       supportsTablet: true,
+      bundleIdentifier: 'com.phanrise.app',
+      associatedDomains: ['applinks:phanrise.com', 'applinks:www.phanrise.com'],
     },
     android: {
       package: 'com.phanrise.app',
@@ -39,6 +41,25 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
+      intentFilters: [
+        {
+          action: 'VIEW',
+          autoVerify: true,
+          data: [
+            {
+              scheme: 'https',
+              host: 'phanrise.com',
+              pathPrefix: '/posts',
+            },
+            {
+              scheme: 'https',
+              host: 'www.phanrise.com',
+              pathPrefix: '/posts',
+            },
+          ],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
+      ],
     },
     web: {
       bundler: 'metro',
@@ -51,6 +72,9 @@ module.exports = {
     },
     extra: {
       apiBaseUrl: apiBaseUrl,
+      eas: {
+        projectId: '89199cc2-100c-4f5d-856f-7297d09ec825',
+      },
     },
   },
 };

@@ -10,7 +10,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useAuth } from '../context/AuthContext';
 import Toast from 'react-native-toast-message';
@@ -22,6 +22,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams<{ redirect?: string }>();
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -43,7 +44,9 @@ export default function LoginScreen() {
         text1: 'Success',
         text2: 'Logged in successfully!',
       });
-      router.replace('/(tabs)');
+      // Redirect to the specified route, or default to feed
+      const redirectTo = params.redirect || '/(tabs)/feed';
+      router.replace(redirectTo as any);
     } else {
       Toast.show({
         type: 'error',
