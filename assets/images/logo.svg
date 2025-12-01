@@ -1,0 +1,12 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="240" fill="#FF6B00"/>
+  
+  <!-- Letter P -->
+  <path d="M 180 140 L 180 380 L 240 380 Q 300 380 300 320 Q 300 260 240 260 L 240 200 L 300 200 L 300 140 Z" fill="white"/>
+  
+  <!-- Coin/Star Icon -->
+  <circle cx="320" cy="260" r="50" fill="white" opacity="0.95"/>
+  <path d="M 320 230 L 328 250 L 348 250 L 332 262 L 340 282 L 320 270 L 300 282 L 308 262 L 292 250 L 312 250 Z" fill="#FF6B00"/>
+</svg>
+

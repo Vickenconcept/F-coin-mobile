@@ -16,7 +16,7 @@ type SidebarItem = {
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const { closeSidebar } = useSidebar();
 
@@ -25,7 +25,6 @@ export function Sidebar() {
     { name: 'Explore', icon: 'compass', path: '/discover' },
     { name: 'Notifications', icon: 'bell', path: '/(tabs)/notifications', badge: unreadCount || 0 },
     { name: 'Messages', icon: 'envelope', path: '/(tabs)/feed' }, // TODO: Add messages screen
-    { name: 'Bookmarks', icon: 'bookmark', path: '/(tabs)/feed' }, // TODO: Add bookmarks screen
     { name: 'Profile', icon: 'user', path: `/profile` },
     { name: 'My Coin', icon: 'money', path: '/(tabs)/my-coin' },
     { name: 'Wallet', icon: 'credit-card', path: '/(tabs)/wallet' },
@@ -46,6 +45,12 @@ export function Sidebar() {
       return pathname === '/(tabs)/feed' || pathname === '/';
     }
     return pathname === path || pathname?.includes(path);
+  };
+
+  const handleLogout = async () => {
+    closeSidebar();
+    await logout();
+    router.replace('/login');
   };
 
   return (
@@ -137,6 +142,17 @@ export function Sidebar() {
             <FontAwesome name="ellipsis-h" size={16} color="#666" />
           </TouchableOpacity>
         )}
+
+        {/* Logout Button - Below User Info */}
+        {user && (
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+          >
+            <FontAwesome name="sign-out" size={20} color="#dc2626" style={styles.logoutIcon} />
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </View>
   );
@@ -149,6 +165,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRightWidth: 1,
     borderRightColor: '#f0f0f0',
+    flexDirection: 'column',
   },
   scrollView: {
     flex: 1,
@@ -226,7 +243,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     marginHorizontal: 12,
-    marginBottom: 20,
+    marginBottom: 12,
     borderRadius: 24,
     backgroundColor: '#f9f9f9',
   },
@@ -261,6 +278,27 @@ const styles = StyleSheet.create({
   userHandle: {
     fontSize: 13,
     color: '#666',
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 20,
+    borderRadius: 24,
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  logoutIcon: {
+    marginRight: 12,
+  },
+  logoutText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#dc2626',
   },
 });
 

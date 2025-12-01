@@ -26,7 +26,7 @@ module.exports = {
     splash: {
       image: './assets/images/splash-icon.png',
       resizeMode: 'contain',
-      backgroundColor: '#ffffff',
+      backgroundColor: '#FF6B00',
     },
     ios: {
       supportsTablet: true,
@@ -37,7 +37,7 @@ module.exports = {
       package: 'com.phanrise.app',
       adaptiveIcon: {
         foregroundImage: './assets/images/adaptive-icon.png',
-        backgroundColor: '#ffffff',
+        backgroundColor: '#FF6B00',
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
