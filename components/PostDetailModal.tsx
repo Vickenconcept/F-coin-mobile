@@ -69,14 +69,12 @@ export function PostDetailModal({
   const highlightAnimations = useRef<Record<string, Animated.Value>>({});
   const scrollViewLayout = useRef<{ y: number }>({ y: 0 });
 
-  // Sync displayPost with post prop when modal opens or post ID changes
   useEffect(() => {
     if (visible && post) {
       setDisplayPost(post);
     }
   }, [visible, post?.id]);
 
-  // Initialize animation immediately when highlightCommentId changes
   useEffect(() => {
     if (visible && highlightCommentId) {
       console.log('🎯 PostDetailModal: Initializing highlight animation', {
@@ -85,19 +83,16 @@ export function PostDetailModal({
         commentsCount: comments.length,
       });
       
-      // Initialize animation immediately
       if (!highlightAnimations.current[highlightCommentId]) {
         highlightAnimations.current[highlightCommentId] = new Animated.Value(0);
       }
       
-      // Set state to trigger re-render so component knows to highlight
       setHighlightedCommentId(highlightCommentId);
     } else {
       setHighlightedCommentId(null);
     }
   }, [visible, highlightCommentId]);
 
-  // Scroll to and highlight comment when highlightCommentId is provided
   useEffect(() => {
     if (visible && highlightCommentId && comments.length > 0) {
       console.log('🎯 PostDetailModal: Highlight comment effect triggered', {
@@ -107,7 +102,6 @@ export function PostDetailModal({
         hasScrollViewRef: !!scrollViewRef.current,
       });
 
-      // Wait for comments to render and layouts to be measured
       const timer = setTimeout(() => {
         console.log('🎯 PostDetailModal: Checking for comment layout', {
           highlightCommentId,
@@ -124,13 +118,11 @@ export function PostDetailModal({
             absoluteY: layout.absoluteY,
           });
 
-          // Get or create animation
           if (!highlightAnimations.current[highlightCommentId]) {
             highlightAnimations.current[highlightCommentId] = new Animated.Value(0);
           }
           const anim = highlightAnimations.current[highlightCommentId];
           
-          // Scroll to comment using stored layout (absoluteY is relative to ScrollView)
           const scrollY = layout.absoluteY !== undefined 
             ? Math.max(0, layout.absoluteY - 100)
             : Math.max(0, layout.y - 100);
@@ -728,6 +720,7 @@ export function PostDetailModal({
               placeholder="Write a reply..."
               multiline
               style={styles.replyInput}
+              popupPosition="above"
             />
             <TouchableOpacity
               style={[styles.replyButton, (!replyContent[comment.id]?.trim() || commenting) && styles.replyButtonDisabled]}
@@ -933,6 +926,7 @@ export function PostDetailModal({
             placeholder="Write a comment..."
             multiline
             style={styles.textInput}
+            popupPosition="above"
           />
           <TouchableOpacity
             style={[styles.sendButton, (!newComment.trim() || commenting) && styles.sendButtonDisabled]}

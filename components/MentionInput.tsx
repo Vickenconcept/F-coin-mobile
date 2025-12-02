@@ -6,12 +6,9 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  FlatList,
+  ScrollView,
   ActivityIndicator,
-  Platform,
-  Modal,
   Dimensions,
-  Keyboard,
 } from 'react-native';
 import { useMentions, type MentionUser } from '../hooks/useMentions';
 
@@ -26,7 +23,24 @@ interface MentionInputProps {
   maxLength?: number;
   onSubmitEditing?: () => void;
   containerStyle?: any;
+  popupPosition?: 'above' | 'below' | 'auto';
 }
+
+// Reserved mention types
+const RESERVED_MENTIONS: MentionUser[] = [
+  {
+    id: 'everyone',
+    username: 'everyone',
+    display_name: 'Everyone',
+    avatar_url: null,
+  },
+  {
+    id: 'highlight',
+    username: 'highlight',
+    display_name: 'Highlight',
+    avatar_url: null,
+  },
+];
 
 export function MentionInput({
   value,
@@ -37,12 +51,13 @@ export function MentionInput({
   maxLength,
   onSubmitEditing,
   containerStyle,
+  popupPosition: popupPositionProp = 'auto',
 }: MentionInputProps) {
   const { searchResults, isSearching, searchUsers, clearResults } = useMentions();
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [popupPosition, setPopupPosition] = useState<'above' | 'below'>('below');
   const inputRef = useRef<TextInput>(null);
   const inputContainerRef = useRef<View>(null);
 
@@ -59,13 +74,23 @@ export function MentionInput({
       // Check if there's a space or newline after @ (meaning mention is complete)
       if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
         setMentionStart(lastAtIndex);
-        const query = textAfterAt.trim();
-        if (query.length > 0) {
-          searchUsers(query);
-          setShowSuggestions(true);
-          setSelectedIndex(0);
+        const query = textAfterAt.trim().toLowerCase();
+        
+        // Always show suggestions when @ is typed, prioritizing reserved mentions
+        setShowSuggestions(true);
+        setSelectedIndex(0);
+        
+        // If query is empty or matches reserved mentions, show reserved mentions first
+        if (query.length === 0 || RESERVED_MENTIONS.some(m => m.username.startsWith(query))) {
+          // Only search users if query doesn't match reserved mentions exactly
+          if (query.length > 0 && !RESERVED_MENTIONS.some(m => m.username === query)) {
+            searchUsers(query);
+          } else {
+            clearResults();
+          }
         } else {
-          setShowSuggestions(false);
+          // Query doesn't match reserved mentions, search for users
+          searchUsers(query);
         }
       } else {
         setShowSuggestions(false);
@@ -113,66 +138,131 @@ export function MentionInput({
     }, 100);
   };
 
+  // Get combined suggestions (reserved mentions first, then search results)
+  const getSuggestions = (): MentionUser[] => {
+    if (mentionStart === null) return [];
+    
+    // Get the current query from the value
+    const textAfterAt = value.substring(mentionStart + 1);
+    const spaceIndex = textAfterAt.indexOf(' ');
+    const newlineIndex = textAfterAt.indexOf('\n');
+    const endIndex = spaceIndex !== -1 && newlineIndex !== -1
+      ? Math.min(spaceIndex, newlineIndex)
+      : spaceIndex !== -1
+        ? spaceIndex
+        : newlineIndex !== -1
+          ? newlineIndex
+          : textAfterAt.length;
+    const query = textAfterAt.substring(0, endIndex).trim().toLowerCase();
+    
+    // Filter reserved mentions based on query - always show if query is empty or matches
+    const filteredReserved = RESERVED_MENTIONS.filter(m => 
+      query.length === 0 || m.username.startsWith(query)
+    );
+    
+    // Filter search results to exclude reserved usernames
+    const filteredSearchResults = searchResults.filter(u => 
+      u.username !== 'everyone' && u.username !== 'highlight'
+    );
+    
+    // Always return reserved mentions first, then search results
+    return [...filteredReserved, ...filteredSearchResults];
+  };
+
   const handleKeyPress = (e: any) => {
-    if (showSuggestions && searchResults.length > 0) {
+    const suggestions = getSuggestions();
+    if (showSuggestions && suggestions.length > 0) {
       if (e.nativeEvent.key === 'Enter' && !multiline) {
         e.preventDefault();
-        insertMention(searchResults[selectedIndex]);
+        insertMention(suggestions[selectedIndex]);
         return;
       }
     }
   };
 
-  const renderSuggestion = ({ item, index }: { item: MentionUser; index: number }) => (
-    <TouchableOpacity
-      style={[
-        styles.suggestionItem,
-        index === selectedIndex && styles.suggestionItemSelected,
-      ]}
-      onPress={() => insertMention(item)}
-      activeOpacity={0.7}
-    >
-      <Image
-        source={{
-          uri: item.avatar_url || 'https://via.placeholder.com/32',
-        }}
-        style={styles.suggestionAvatar}
-      />
-      <View style={styles.suggestionContent}>
-        <Text style={styles.suggestionName}>
-          {item.display_name || item.username}
-        </Text>
-        <Text style={styles.suggestionUsername}>@{item.username}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderSuggestion = ({ item, index }: { item: MentionUser; index: number }) => {
+    const isReserved = item.id === 'everyone' || item.id === 'highlight';
+    return (
+      <TouchableOpacity
+        style={[
+          styles.suggestionItem,
+          index === selectedIndex && styles.suggestionItemSelected,
+          isReserved && styles.reservedMentionItem,
+        ]}
+        onPress={() => insertMention(item)}
+        activeOpacity={0.7}
+      >
+        {item.avatar_url ? (
+          <Image
+            source={{ uri: item.avatar_url }}
+            style={styles.suggestionAvatar}
+          />
+        ) : (
+          <View style={[styles.suggestionAvatar, styles.reservedAvatar]}>
+            <Text style={styles.reservedAvatarText}>
+              {item.display_name?.charAt(0) || item.username.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
+        <View style={styles.suggestionContent}>
+          <Text style={styles.suggestionName}>
+            {item.display_name || item.username}
+          </Text>
+          <Text style={styles.suggestionUsername}>@{item.username}</Text>
+        </View>
+        {isReserved && (
+          <View style={styles.reservedBadge}>
+            <Text style={styles.reservedBadgeText}>Special</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const inputRefCallback = (node: TextInput | null) => {
     inputRef.current = node;
   };
 
-  useEffect(() => {
-    const keyboardWillShow = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => {
-        setKeyboardHeight(e.endCoordinates.height);
-      }
-    );
-    const keyboardWillHide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        setKeyboardHeight(0);
-      }
-    );
+  // Measure input position and determine popup placement
+  const measureInputPosition = () => {
+    // If popupPosition is explicitly set, use it
+    if (popupPositionProp === 'above') {
+      setPopupPosition('above');
+      return;
+    }
+    if (popupPositionProp === 'below') {
+      setPopupPosition('below');
+      return;
+    }
+    
+    // Auto mode: measure and decide
+    if (inputContainerRef.current && showSuggestions) {
+      inputContainerRef.current.measureInWindow((x, y, width, height) => {
+        const spaceBelow = SCREEN_HEIGHT - (y + height);
+        const spaceAbove = y;
+        const estimatedPopupHeight = 200; // Max height of popup
+        
+        // If not enough space below but enough above, show above
+        if (spaceBelow < estimatedPopupHeight && spaceAbove > estimatedPopupHeight) {
+          setPopupPosition('above');
+        } else {
+          setPopupPosition('below');
+        }
+      });
+    }
+  };
 
-    return () => {
-      keyboardWillShow.remove();
-      keyboardWillHide.remove();
-    };
-  }, []);
+  useEffect(() => {
+    if (showSuggestions) {
+      // Small delay to ensure layout is complete
+      setTimeout(() => {
+        measureInputPosition();
+      }, 100);
+    }
+  }, [showSuggestions, popupPositionProp]);
 
   return (
-    <View ref={inputContainerRef} style={[styles.container, containerStyle]}>
+    <View ref={inputContainerRef} style={[styles.container, containerStyle]} onLayout={measureInputPosition}>
       <TextInput
         ref={inputRefCallback}
         value={value}
@@ -185,40 +275,32 @@ export function MentionInput({
         maxLength={maxLength}
         onSubmitEditing={onSubmitEditing}
       />
-      <Modal
-        visible={showSuggestions}
-        transparent={true}
-        animationType="none"
-        onRequestClose={() => setShowSuggestions(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowSuggestions(false)}
-        >
-          <View style={[styles.suggestionsContainer, { marginBottom: Math.max(keyboardHeight + 80, 100) }]}>
-            {isSearching ? (
-              <View style={styles.suggestionItem}>
-                <ActivityIndicator size="small" color="#FF6B00" />
-                <Text style={styles.searchingText}>Searching...</Text>
-              </View>
-            ) : searchResults.length > 0 ? (
-              <FlatList
-                data={searchResults}
-                renderItem={renderSuggestion}
-                keyExtractor={(item) => item.id}
-                style={styles.suggestionsList}
-                keyboardShouldPersistTaps="handled"
-                nestedScrollEnabled={true}
-              />
-            ) : (
-              <View style={styles.suggestionItem}>
-                <Text style={styles.noResultsText}>No users found</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {showSuggestions && (
+        <View style={[
+          styles.suggestionsContainer,
+          popupPosition === 'above' ? styles.suggestionsContainerAbove : styles.suggestionsContainerBelow
+        ]}>
+          {isSearching ? (
+            <View style={styles.suggestionItem}>
+              <ActivityIndicator size="small" color="#FF6B00" />
+              <Text style={styles.searchingText}>Searching...</Text>
+            </View>
+          ) : getSuggestions().length > 0 ? (
+            <ScrollView
+              style={styles.suggestionsList}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
+              bounces={false}
+            >
+              {getSuggestions().map((item, index) => renderSuggestion({ item, index }))}
+            </ScrollView>
+          ) : (
+            <View style={styles.suggestionItem}>
+              <Text style={styles.noResultsText}>No users found</Text>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -240,25 +322,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     width: '100%',
   },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    paddingBottom: 0,
-    paddingHorizontal: 0,
-  },
   suggestionsContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#e0e0e0',
     borderRadius: 8,
-    marginHorizontal: 16,
-    maxHeight: Math.min(SCREEN_HEIGHT * 0.4, 200),
+    maxHeight: 200,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 10,
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  suggestionsContainerBelow: {
+    top: '100%',
+    marginTop: 4,
+  },
+  suggestionsContainerAbove: {
+    bottom: '100%',
+    marginBottom: 4,
   },
   suggestionsList: {
     maxHeight: 200,
@@ -300,6 +386,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     padding: 12,
+  },
+  reservedMentionItem: {
+    backgroundColor: '#FFF5E6',
+  },
+  reservedAvatar: {
+    backgroundColor: '#FF6B00',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reservedAvatarText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  reservedBadge: {
+    backgroundColor: '#FF6B00',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  reservedBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
   },
 });
 

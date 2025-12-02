@@ -428,6 +428,7 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
               placeholder="Write a reply..."
               multiline
               style={styles.replyInput}
+              popupPosition="above"
             />
             <TouchableOpacity
               style={[styles.replyButton, (!replyContent[comment.id]?.trim() || commenting) && styles.replyButtonDisabled]}
@@ -518,6 +519,7 @@ export function CommentModal({ visible, onClose, post, onUpdatePost }: CommentMo
             placeholder="Write a comment..."
             multiline
             style={styles.textInput}
+            popupPosition="above"
           />
           <TouchableOpacity
             style={[styles.sendButton, (!newComment.trim() || commenting) && styles.sendButtonDisabled]}
