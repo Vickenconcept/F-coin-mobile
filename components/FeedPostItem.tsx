@@ -192,19 +192,12 @@ export function FeedPostItem({
         <Text style={styles.timestamp}>{formatTimeAgo(post.created_at)}</Text>
       </View>
 
-      {/* Post Content */}
+      {/* Post Content - clickable to open post detail, positioned above media */}
       {post.content && (
         <TouchableOpacity
-          onPress={() => {
-            console.log('📝 FeedPostItem: Toggle expand clicked', {
-              postId: post.id,
-              currentExpanded: isExpanded,
-              contentLength: post.content?.length || 0,
-              hasToggleHandler: !!onToggleExpanded,
-            });
-            onToggleExpanded?.();
-          }}
-          activeOpacity={0.7}
+          onPress={() => onOpenPost(post)}
+          activeOpacity={0.95}
+          style={styles.contentContainer}
         >
           <MentionText 
             text={post.content} 
@@ -212,9 +205,17 @@ export function FeedPostItem({
             numberOfLines={isExpanded ? undefined : 3}
           />
           {post.content && post.content.length > 150 && (
-            <Text style={styles.showMoreText}>
-              {isExpanded ? 'Show less' : 'Show more'}
-            </Text>
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                onToggleExpanded?.();
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.showMoreText}>
+                {isExpanded ? 'Show less' : 'Show more'}
+              </Text>
+            </TouchableOpacity>
           )}
         </TouchableOpacity>
       )}
@@ -327,11 +328,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
+  contentContainer: {
+    marginBottom: 12,
+  },
   content: {
     fontSize: 16,
     lineHeight: 22,
     color: '#000',
-    marginBottom: 12,
   },
   sharedPost: {
     borderWidth: 1,
