@@ -6,9 +6,10 @@ interface MentionTextProps {
   text: string;
   style?: TextStyle | TextStyle[];
   numberOfLines?: number;
+  onPress?: () => void;
 }
 
-export function MentionText({ text, style, numberOfLines }: MentionTextProps) {
+export function MentionText({ text, style, numberOfLines, onPress }: MentionTextProps) {
   const router = useRouter();
 
   const parts = useMemo(() => {
@@ -57,7 +58,7 @@ export function MentionText({ text, style, numberOfLines }: MentionTextProps) {
   );
 
   return (
-    <Text style={style} numberOfLines={numberOfLines}>
+    <Text style={style} numberOfLines={numberOfLines} onPress={onPress}>
       {parts.map((part, index) =>
         part.isMention ? (
           <Text

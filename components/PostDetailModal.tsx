@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -11,6 +11,7 @@ import {
   Platform,
   Image,
   BackHandler,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiClient } from '../lib/apiClient';
@@ -32,6 +33,7 @@ type PostDetailModalProps = {
   onOpenProfile: (userId: string) => void;
   isLiking?: boolean;
   isSharing?: boolean;
+  highlightCommentId?: string | null;
 };
 
 export function PostDetailModal({
@@ -44,6 +46,7 @@ export function PostDetailModal({
   onOpenProfile,
   isLiking = false,
   isSharing = false,
+  highlightCommentId = null,
 }: PostDetailModalProps) {
   const insets = useSafeAreaInsets();
   // Local state for post to allow optimistic updates
@@ -59,6 +62,12 @@ export function PostDetailModal({
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [isSharingToTimeline, setIsSharingToTimeline] = useState(false);
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
+  const [highlightedCommentId, setHighlightedCommentId] = useState<string | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const commentRefs = useRef<Record<string, View | null>>({});
+  const commentLayouts = useRef<Record<string, { y: number; height: number; absoluteY: number }>>({});
+  const highlightAnimations = useRef<Record<string, Animated.Value>>({});
+  const scrollViewLayout = useRef<{ y: number }>({ y: 0 });
 
   // Sync displayPost with post prop when modal opens or post ID changes
   useEffect(() => {
@@ -66,6 +75,115 @@ export function PostDetailModal({
       setDisplayPost(post);
     }
   }, [visible, post?.id]);
+
+  // Initialize animation immediately when highlightCommentId changes
+  useEffect(() => {
+    if (visible && highlightCommentId) {
+      console.log('🎯 PostDetailModal: Initializing highlight animation', {
+        highlightCommentId,
+        visible,
+        commentsCount: comments.length,
+      });
+      
+      // Initialize animation immediately
+      if (!highlightAnimations.current[highlightCommentId]) {
+        highlightAnimations.current[highlightCommentId] = new Animated.Value(0);
+      }
+      
+      // Set state to trigger re-render so component knows to highlight
+      setHighlightedCommentId(highlightCommentId);
+    } else {
+      setHighlightedCommentId(null);
+    }
+  }, [visible, highlightCommentId]);
+
+  // Scroll to and highlight comment when highlightCommentId is provided
+  useEffect(() => {
+    if (visible && highlightCommentId && comments.length > 0) {
+      console.log('🎯 PostDetailModal: Highlight comment effect triggered', {
+        highlightCommentId,
+        visible,
+        commentsCount: comments.length,
+        hasScrollViewRef: !!scrollViewRef.current,
+      });
+
+      // Wait for comments to render and layouts to be measured
+      const timer = setTimeout(() => {
+        console.log('🎯 PostDetailModal: Checking for comment layout', {
+          highlightCommentId,
+          availableLayouts: Object.keys(commentLayouts.current),
+          layoutData: commentLayouts.current[highlightCommentId],
+        });
+
+        const layout = commentLayouts.current[highlightCommentId];
+        if (layout && scrollViewRef.current) {
+          console.log('✅ PostDetailModal: Found layout, scrolling and highlighting', {
+            highlightCommentId,
+            layoutY: layout.y,
+            layoutHeight: layout.height,
+            absoluteY: layout.absoluteY,
+          });
+
+          // Get or create animation
+          if (!highlightAnimations.current[highlightCommentId]) {
+            highlightAnimations.current[highlightCommentId] = new Animated.Value(0);
+          }
+          const anim = highlightAnimations.current[highlightCommentId];
+          
+          // Scroll to comment using stored layout (absoluteY is relative to ScrollView)
+          const scrollY = layout.absoluteY !== undefined 
+            ? Math.max(0, layout.absoluteY - 100)
+            : Math.max(0, layout.y - 100);
+          console.log('📜 PostDetailModal: Scrolling to', { 
+            scrollY, 
+            layoutY: layout.y, 
+            absoluteY: layout.absoluteY,
+          });
+          
+          // Scroll first, then start animation
+          scrollViewRef.current.scrollTo({ 
+            y: scrollY, 
+            animated: true 
+          });
+          
+          // Start highlight animation after a short delay to ensure scroll completes
+          setTimeout(() => {
+            Animated.sequence([
+              Animated.timing(anim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: false,
+              }),
+              Animated.delay(1500),
+              Animated.timing(anim, {
+                toValue: 0,
+                duration: 500,
+                useNativeDriver: false,
+              }),
+            ]).start(() => {
+              console.log('✅ PostDetailModal: Highlight animation completed', { highlightCommentId });
+              // Clean up after animation
+              setTimeout(() => {
+                delete highlightAnimations.current[highlightCommentId];
+                setHighlightedCommentId(null);
+              }, 100);
+            });
+          }, 300);
+        } else {
+          console.warn('❌ PostDetailModal: Layout not found or ScrollView ref missing', {
+            highlightCommentId,
+            hasLayout: !!layout,
+            hasScrollViewRef: !!scrollViewRef.current,
+            commentsCount: comments.length,
+            availableLayouts: Object.keys(commentLayouts.current),
+            allCommentIds: comments.flatMap(c => [c.id, ...(c.replies || []).map((r: any) => r.id)]),
+          });
+        }
+      }, 1200); // Increased timeout to ensure all layouts are measured
+
+      return () => clearTimeout(timer);
+    }
+  }, [visible, highlightCommentId, comments.length]);
 
   // Handle share to timeline
   const handleShareToTimeline = useCallback(async (comment?: string) => {
@@ -481,8 +599,82 @@ export function PostDetailModal({
     return date.toLocaleDateString();
   }, []);
 
-  const renderComment = useCallback((comment: Comment | any, isReply = false) => (
-    <View key={comment.id} style={[styles.commentItem, isReply && styles.replyItem]}>
+  const renderComment = useCallback((comment: Comment | any, isReply = false) => {
+    const isHighlighted = highlightedCommentId === comment.id;
+    const highlightAnim = highlightAnimations.current[comment.id];
+    const shouldHighlight = isHighlighted && highlightAnim;
+    
+    // Log when rendering highlighted comment
+    if (isHighlighted) {
+      console.log('✨ PostDetailModal: Rendering highlighted comment', {
+        commentId: comment.id,
+        isReply,
+        hasAnim: !!highlightAnim,
+        shouldHighlight,
+      });
+    }
+    
+    // Log when rendering highlighted comment
+    if (isHighlighted) {
+      console.log('✨ PostDetailModal: Rendering highlighted comment', {
+        commentId: comment.id,
+        isReply,
+        hasAnim: !!highlightAnim,
+        shouldHighlight,
+      });
+    }
+    
+    const content = (
+    <View 
+      ref={(ref) => {
+        if (ref) {
+          commentRefs.current[comment.id] = ref;
+        }
+      }}
+      onLayout={(event) => {
+        const { y, height } = event.nativeEvent.layout;
+        const commentRef = commentRefs.current[comment.id];
+        if (commentRef && scrollViewRef.current) {
+          // Use measureInWindow to get absolute positions for both comment and ScrollView
+          commentRef.measureInWindow((commentX, commentAbsoluteY, commentWidth, commentMeasuredHeight) => {
+            // Also measure ScrollView to get its absolute position
+            (scrollViewRef.current as any)?.measureInWindow((scrollX: number, scrollAbsoluteY: number, scrollWidth: number, scrollHeight: number) => {
+              // Calculate relative Y position within ScrollView
+              const relativeY = commentAbsoluteY - scrollAbsoluteY;
+              commentLayouts.current[comment.id] = { y, height, absoluteY: relativeY };
+              console.log('📐 PostDetailModal: Comment layout measured', {
+                commentId: comment.id,
+                y,
+                height,
+                commentAbsoluteY,
+                scrollAbsoluteY,
+                relativeY,
+                isHighlightTarget: highlightedCommentId === comment.id,
+              });
+              
+              // If this is the target, scroll immediately (animation will be handled by useEffect)
+              if (highlightCommentId === comment.id) {
+                const scrollY = Math.max(0, relativeY - 100);
+                console.log('🎯 PostDetailModal: Immediate scroll to comment', {
+                  commentId: comment.id,
+                  relativeY,
+                  scrollY,
+                });
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollTo({ y: scrollY, animated: true });
+                }, 200);
+              }
+            });
+          });
+        } else {
+          commentLayouts.current[comment.id] = { y, height, absoluteY: y };
+        }
+      }}
+      style={[
+        styles.commentItem, 
+        isReply && styles.replyItem,
+      ]}
+    >
       <Image
         source={{
           uri: comment.user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.user.display_name || comment.user.username)}&background=FF6B00&color=fff`
@@ -579,7 +771,33 @@ export function PostDetailModal({
         })()}
       </View>
     </View>
-  ), [replyingTo, replyContent, commenting, likingComment, handleLikeComment, handleSubmitComment, formatTimeAgo, expandedReplies]);
+    );
+
+    if (shouldHighlight) {
+      return (
+        <Animated.View 
+          key={comment.id}
+          style={{
+            backgroundColor: highlightAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: ['rgba(59, 130, 246, 0)', 'rgba(59, 130, 246, 0.3)'],
+            }),
+            borderRadius: 8,
+            padding: 4,
+            margin: -4,
+          } as any}
+        >
+          {content}
+        </Animated.View>
+      );
+    }
+
+    return (
+      <View key={comment.id}>
+        {content}
+      </View>
+    );
+  }, [replyingTo, replyContent, commenting, likingComment, handleLikeComment, handleSubmitComment, formatTimeAgo, expandedReplies, highlightedCommentId]);
 
   if (!displayPost) return null;
 
@@ -602,7 +820,11 @@ export function PostDetailModal({
           <View style={{ width: 24 }} />
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+        >
           {/* Post Content */}
           <View style={styles.postContainer}>
             {/* Post Header */}
@@ -686,7 +908,19 @@ export function PostDetailModal({
                 <Text style={styles.emptySubtext}>Be the first to comment!</Text>
               </View>
             ) : (
-              comments.map((comment) => renderComment(comment))
+              comments.map((comment) => {
+                // Also check if highlightCommentId is in replies
+                const isInReplies = comment.replies?.some((r: any) => r.id === highlightCommentId);
+                if (isInReplies && !expandedReplies[comment.id]) {
+                  // Auto-expand replies if target is in replies
+                  console.log('📂 PostDetailModal: Auto-expanding replies to show highlighted comment', {
+                    commentId: comment.id,
+                    highlightCommentId,
+                  });
+                  setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }));
+                }
+                return renderComment(comment);
+              })
             )}
           </View>
         </ScrollView>
@@ -975,5 +1209,15 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.5,
+  },
+  viewMoreReplies: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  viewMoreRepliesText: {
+    fontSize: 13,
+    color: '#FF6B00',
+    fontWeight: '600',
   },
 });

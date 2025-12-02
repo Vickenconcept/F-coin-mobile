@@ -44,6 +44,7 @@ export default function FeedScreen() {
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   const [isLiking, setIsLiking] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState<string | null>(null);
+  const [highlightCommentId, setHighlightCommentId] = useState<string | null>(null);
 
   // Animated values for image zoom
   const imageScale = useRef(new Animated.Value(1)).current;
@@ -74,13 +75,16 @@ export default function FeedScreen() {
   useEffect(() => {
     if (params.openPost && posts.length > 0) {
       const postId = Array.isArray(params.openPost) ? params.openPost[0] : params.openPost;
+      const commentId = params.commentId 
+        ? (Array.isArray(params.commentId) ? params.commentId[0] : params.commentId)
+        : undefined;
       const post = posts.find(p => p.id === postId);
       if (post) {
-        handleOpenPostDetail(post);
+        handleOpenPostDetail(post, commentId);
         router.setParams({ openPost: undefined, commentId: undefined });
       }
     }
-  }, [params.openPost, posts, router]);
+  }, [params.openPost, params.commentId, posts, router]);
 
   useEffect(() => {
     if (params.compose) {
@@ -115,8 +119,9 @@ export default function FeedScreen() {
     setShareModalVisible(true);
   }, []);
 
-  const handleOpenPostDetail = useCallback((post: FeedPost) => {
+  const handleOpenPostDetail = useCallback((post: FeedPost, commentId?: string) => {
     setSelectedPost(post);
+    setHighlightCommentId(commentId || null);
     setPostDetailModalVisible(true);
   }, []);
 
@@ -125,10 +130,25 @@ export default function FeedScreen() {
   }, [router]);
 
   const handleToggleExpanded = useCallback((postId: string) => {
-    setExpandedPosts(prev => ({
-      ...prev,
-      [postId]: !prev[postId]
-    }));
+    console.log('🔄 FeedScreen: Toggle expanded called', {
+      postId,
+      currentState: expandedPosts[postId],
+      newState: !expandedPosts[postId],
+    });
+    setExpandedPosts(prev => {
+      const newValue = !prev[postId];
+      const newState = {
+        ...prev,
+        [postId]: newValue
+      };
+      console.log('🔄 FeedScreen: Expanded posts state updated', {
+        postId,
+        oldState: prev[postId],
+        newState: newValue,
+        allExpanded: Object.keys(newState).filter(k => newState[k]),
+      });
+      return newState;
+    });
   }, []);
 
   const handleShareToTimelineStable = useCallback(async (comment?: string) => {
@@ -302,9 +322,11 @@ export default function FeedScreen() {
       isLiking={isLiking === item.id}
       isSharing={isSharing === item.id}
       isExpanded={expandedPosts[item.id] || false}
+      sharedPostExpanded={item.shared_post ? (expandedPosts[item.shared_post.id] || false) : false}
       onToggleExpanded={() => handleToggleExpanded(item.id)}
+      onToggleSharedPostExpanded={item.shared_post ? () => handleToggleExpanded(item.shared_post!.id) : undefined}
     />
-  ), [user?.id, handleLike, handleComment, handleShareClick, handleOpenProfile, handleOpenPostDetail, handleImagePress, isLiking, isSharing]);
+  ), [user?.id, handleLike, handleComment, handleShareClick, handleOpenProfile, handleOpenPostDetail, handleImagePress, isLiking, isSharing, expandedPosts, handleToggleExpanded]);
 
   const renderLoadingFooter = useCallback(() => {
     if (!loadingMore) return null;
@@ -459,6 +481,7 @@ export default function FeedScreen() {
           onClose={() => {
             setPostDetailModalVisible(false);
             setSelectedPost(null);
+            setHighlightCommentId(null);
           }}
           post={selectedPost}
           onUpdatePost={handleUpdatePost}
@@ -467,6 +490,7 @@ export default function FeedScreen() {
           onOpenProfile={handleOpenProfile}
           isLiking={isLiking === selectedPost?.id}
           isSharing={isSharing === selectedPost?.id}
+          highlightCommentId={highlightCommentId}
         />
 
         {/* Image Zoom Viewer */}

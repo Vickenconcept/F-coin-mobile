@@ -56,8 +56,11 @@ export default function NotificationsScreen() {
     if (type.includes('transfer')) {
       return { name: 'exchange' as const, color: '#9B59B6' };
     }
-    if (type.includes('like') || type.includes('comment') || type.includes('share')) {
+    if (type.includes('like')) {
       return { name: 'heart' as const, color: '#E91E63' };
+    }
+    if (type.includes('comment') || type.includes('reply')) {
+      return { name: 'comment' as const, color: '#1DA1F2' };
     }
     return { name: 'bell' as const, color: '#666' };
   };
@@ -72,6 +75,26 @@ export default function NotificationsScreen() {
         return `${mentioner} mentioned you in a comment`;
       }
       return `${mentioner} mentioned you in a post`;
+    }
+
+    if (type === 'post.like') {
+      const liker = data.liker_display_name || data.liker_username || 'Someone';
+      return `${liker} liked your post`;
+    }
+
+    if (type === 'post.comment') {
+      const commenter = data.commenter_display_name || data.commenter_username || 'Someone';
+      return `${commenter} commented on your post`;
+    }
+
+    if (type === 'comment.like') {
+      const liker = data.liker_display_name || data.liker_username || 'Someone';
+      return `${liker} liked your comment`;
+    }
+
+    if (type === 'comment.reply') {
+      const replier = data.replier_display_name || data.replier_username || 'Someone';
+      return `${replier} replied to your comment`;
     }
 
     if (type.includes('reward')) {
@@ -98,16 +121,18 @@ export default function NotificationsScreen() {
     if (data.post_id) {
       // Navigate to feed and open the post detail modal
       // The feed will handle opening the post based on the postId param
+      const commentId = data.comment_id ? String(data.comment_id) : undefined;
       router.push({
         pathname: '/(tabs)/feed',
         params: { 
           openPost: data.post_id as string,
-          commentId: data.comment_id ? String(data.comment_id) : undefined,
+          ...(commentId ? { commentId } : {}),
         },
       } as any);
-    } else if (data.mentioner_username) {
+    } else if (data.mentioner_username || data.liker_username || data.commenter_username || data.replier_username) {
       // Navigate to user profile
-      router.push(`/${data.mentioner_username}` as any);
+      const username = data.mentioner_username || data.liker_username || data.commenter_username || data.replier_username;
+      router.push(`/${username}` as any);
     }
   };
 
@@ -196,8 +221,19 @@ export default function NotificationsScreen() {
             const icon = getNotificationIcon(notification.type);
             const data = notification.data;
             const isUnread = !notification.read_at;
-            const avatarUrl = data.mentioner_avatar_url as string | undefined;
-            const mentionerName = (data.mentioner_display_name || data.mentioner_username) as string | undefined;
+            // Get avatar from various notification types
+            const avatarUrl = (
+              data.mentioner_avatar_url || 
+              data.liker_avatar_url || 
+              data.commenter_avatar_url || 
+              data.replier_avatar_url
+            ) as string | undefined;
+            const userName = (
+              data.mentioner_display_name || data.mentioner_username ||
+              data.liker_display_name || data.liker_username ||
+              data.commenter_display_name || data.commenter_username ||
+              data.replier_display_name || data.replier_username
+            ) as string | undefined;
 
             return (
               <TouchableOpacity

@@ -27,7 +27,9 @@ type FeedPostItemProps = {
   isLiking?: boolean;
   isSharing?: boolean;
   isExpanded?: boolean;
+  sharedPostExpanded?: boolean;
   onToggleExpanded?: () => void;
+  onToggleSharedPostExpanded?: () => void;
 };
 
 export function FeedPostItem({
@@ -42,7 +44,9 @@ export function FeedPostItem({
   isLiking = false,
   isSharing = false,
   isExpanded = false,
+  sharedPostExpanded = false,
   onToggleExpanded,
+  onToggleSharedPostExpanded,
 }: FeedPostItemProps) {
   
   // Debug logging to check post structure
@@ -90,7 +94,7 @@ export function FeedPostItem({
     return date.toLocaleDateString();
   }, []);
 
-  const renderSharedPost = useCallback((sharedPost: FeedPost) => {
+  const renderSharedPost = useCallback((sharedPost: FeedPost, sharedPostExpanded: boolean) => {
     if (!sharedPost || !sharedPost.user) {
       return null;
     }
@@ -124,18 +128,26 @@ export function FeedPostItem({
       </View>
 
       {sharedPost.content && (
-        <TouchableOpacity 
-          onPress={() => onToggleExpanded && onToggleExpanded()}
-          activeOpacity={0.8}
+        <TouchableOpacity
+          onPress={() => {
+            console.log('📝 FeedPostItem: Toggle expand clicked (shared post)', {
+              postId: sharedPost.id,
+              currentExpanded: sharedPostExpanded,
+              contentLength: sharedPost.content?.length || 0,
+              hasToggleHandler: !!onToggleSharedPostExpanded,
+            });
+            onToggleSharedPostExpanded?.();
+          }}
+          activeOpacity={0.7}
         >
           <MentionText 
             text={sharedPost.content} 
             style={styles.sharedContent}
-            numberOfLines={isExpanded ? undefined : 3}
+            numberOfLines={sharedPostExpanded ? undefined : 3}
           />
-          {sharedPost.content.length > 150 && onToggleExpanded && (
+          {sharedPost.content && sharedPost.content.length > 150 && (
             <Text style={styles.showMoreText}>
-              {isExpanded ? 'Show less' : 'Show more'}
+              {sharedPostExpanded ? 'Show less' : 'Show more'}
             </Text>
           )}
         </TouchableOpacity>
@@ -181,25 +193,34 @@ export function FeedPostItem({
       </View>
 
       {/* Post Content */}
-      <TouchableOpacity onPress={() => onOpenPost(post)} activeOpacity={0.95}>
-        {post.content && (
-          <TouchableOpacity 
-            onPress={onToggleExpanded}
-            activeOpacity={0.8}
-          >
-            <MentionText 
-              text={post.content} 
-              style={styles.content}
-              numberOfLines={isExpanded ? undefined : 3}
-            />
-            {post.content.length > 150 && onToggleExpanded && (
-              <Text style={styles.showMoreText}>
-                {isExpanded ? 'Show less' : 'Show more'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        )}
+      {post.content && (
+        <TouchableOpacity
+          onPress={() => {
+            console.log('📝 FeedPostItem: Toggle expand clicked', {
+              postId: post.id,
+              currentExpanded: isExpanded,
+              contentLength: post.content?.length || 0,
+              hasToggleHandler: !!onToggleExpanded,
+            });
+            onToggleExpanded?.();
+          }}
+          activeOpacity={0.7}
+        >
+          <MentionText 
+            text={post.content} 
+            style={styles.content}
+            numberOfLines={isExpanded ? undefined : 3}
+          />
+          {post.content && post.content.length > 150 && (
+            <Text style={styles.showMoreText}>
+              {isExpanded ? 'Show less' : 'Show more'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      )}
 
+      {/* Media and other post elements - clickable to open post detail */}
+      <TouchableOpacity onPress={() => onOpenPost(post)} activeOpacity={0.95}>
         {/* Media - Only show if this is NOT a shared post (to avoid duplicate media) */}
         {!post.shared_post && post.media && Array.isArray(post.media) && post.media.length > 0 && (
           <FeedMediaGrid 
@@ -221,7 +242,7 @@ export function FeedPostItem({
         )}
 
         {/* Shared Post */}
-        {post.shared_post && renderSharedPost(post.shared_post)}
+        {post.shared_post && renderSharedPost(post.shared_post, sharedPostExpanded)}
 
         {/* Reward Badge */}
         {post.reward_enabled && (
