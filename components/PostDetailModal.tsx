@@ -20,6 +20,7 @@ import { FeedMediaGrid } from './FeedMediaGrid';
 import { MentionText } from './MentionText';
 import { MentionInput } from './MentionInput';
 import { ShareModal } from './ShareModal';
+import { ImageZoomViewer } from './ImageZoomViewer';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Comment, FeedPost } from './CommentModal';
 
@@ -68,6 +69,16 @@ export function PostDetailModal({
   const commentLayouts = useRef<Record<string, { y: number; height: number; absoluteY: number }>>({});
   const highlightAnimations = useRef<Record<string, Animated.Value>>({});
   const scrollViewLayout = useRef<{ y: number }>({ y: 0 });
+  
+  // Image viewer state
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [imageViewerMedia, setImageViewerMedia] = useState<Array<{ url: string; type: 'image' | 'video' }>>([]);
+  const [imageViewerIndex, setImageViewerIndex] = useState(0);
+  const [imageScale] = useState(new Animated.Value(1));
+  const [imageTranslateX] = useState(new Animated.Value(0));
+  const [imageTranslateY] = useState(new Animated.Value(0));
+  const [lastScale] = useState({ value: 1 });
+  const [lastTranslate] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     if (visible && post) {
@@ -849,7 +860,14 @@ export function PostDetailModal({
 
             {/* Post Media */}
             {(displayPost as any).media && Array.isArray((displayPost as any).media) && (displayPost as any).media.length > 0 && (
-              <FeedMediaGrid media={(displayPost as any).media} />
+              <FeedMediaGrid 
+                media={(displayPost as any).media}
+                onImagePress={(index: number) => {
+                  setImageViewerMedia((displayPost as any).media.map((m: any) => ({ url: m.url, type: m.type })));
+                  setImageViewerIndex(index);
+                  setImageViewerVisible(true);
+                }}
+              />
             )}
 
             {/* Post Actions */}
@@ -947,6 +965,38 @@ export function PostDetailModal({
           onClose={() => setShareModalVisible(false)}
           post={displayPost as any}
           onShareToTimeline={handleShareToTimeline}
+        />
+
+        {/* Image Zoom Viewer */}
+        <ImageZoomViewer
+          visible={imageViewerVisible}
+          onClose={() => {
+            setImageViewerVisible(false);
+            // Reset zoom
+            imageScale.setValue(1);
+            imageTranslateX.setValue(0);
+            imageTranslateY.setValue(0);
+            lastScale.value = 1;
+            lastTranslate.x = 0;
+            lastTranslate.y = 0;
+          }}
+          media={imageViewerMedia}
+          initialIndex={imageViewerIndex}
+          onIndexChange={(index) => {
+            setImageViewerIndex(index);
+            // Reset zoom when changing images
+            imageScale.setValue(1);
+            imageTranslateX.setValue(0);
+            imageTranslateY.setValue(0);
+            lastScale.value = 1;
+            lastTranslate.x = 0;
+            lastTranslate.y = 0;
+          }}
+          imageScale={imageScale}
+          imageTranslateX={imageTranslateX}
+          imageTranslateY={imageTranslateY}
+          lastScale={lastScale}
+          lastTranslate={lastTranslate}
         />
       </KeyboardAvoidingView>
     </Modal>

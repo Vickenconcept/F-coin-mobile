@@ -100,13 +100,20 @@ export function FeedMediaGrid({ media, onOpen, onImagePress, onRemove }: FeedMed
         {item.type === 'image' ? (
           <Image source={{ uri: item.url }} style={styles.mediaImage} resizeMode="cover" />
         ) : (
-          <Video
-            source={{ uri: item.url }}
-            style={styles.mediaVideo}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-            useNativeControls
-          />
+          <View style={styles.videoWrapper}>
+            <Video
+              source={{ uri: item.url }}
+              style={styles.mediaVideo}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={false}
+              useNativeControls={false}
+            />
+            <View style={styles.videoPlayOverlay} pointerEvents="none">
+              <View style={styles.playButtonContainer}>
+                <FontAwesome name="play-circle" size={48} color="#fff" />
+              </View>
+            </View>
+          </View>
         )}
         {isLast && (
           <View style={styles.overlay}>
@@ -156,9 +163,28 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  videoWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
   mediaVideo: {
     width: '100%',
     height: '100%',
+  },
+  videoPlayOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  playButtonContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   overlay: {
     position: 'absolute',
