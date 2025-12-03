@@ -275,7 +275,7 @@ export function MentionInput({
         maxLength={maxLength}
         onSubmitEditing={onSubmitEditing}
       />
-      {showSuggestions && (
+      {showSuggestions && (getSuggestions().length > 0 || isSearching) && (
         <View style={[
           styles.suggestionsContainer,
           popupPosition === 'above' ? styles.suggestionsContainerAbove : styles.suggestionsContainerBelow
@@ -292,7 +292,45 @@ export function MentionInput({
               nestedScrollEnabled={true}
               bounces={false}
             >
-              {getSuggestions().map((item, index) => renderSuggestion({ item, index }))}
+              {getSuggestions().map((item, index) => {
+                const isReserved = item.id === 'everyone' || item.id === 'highlight';
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.suggestionItem,
+                      index === selectedIndex && styles.suggestionItemSelected,
+                      isReserved && styles.reservedMentionItem,
+                    ]}
+                    onPress={() => insertMention(item)}
+                    activeOpacity={0.7}
+                  >
+                    {item.avatar_url ? (
+                      <Image
+                        source={{ uri: item.avatar_url }}
+                        style={styles.suggestionAvatar}
+                      />
+                    ) : (
+                      <View style={[styles.suggestionAvatar, styles.reservedAvatar]}>
+                        <Text style={styles.reservedAvatarText}>
+                          {item.display_name?.charAt(0) || item.username.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.suggestionContent}>
+                      <Text style={styles.suggestionName}>
+                        {item.display_name || item.username}
+                      </Text>
+                      <Text style={styles.suggestionUsername}>@{item.username}</Text>
+                    </View>
+                    {isReserved && (
+                      <View style={styles.reservedBadge}>
+                        <Text style={styles.reservedBadgeText}>Special</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           ) : (
             <View style={styles.suggestionItem}>

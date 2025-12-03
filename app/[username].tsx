@@ -28,6 +28,7 @@ import { FeedMediaGrid } from '../components/FeedMediaGrid';
 import { MentionText } from '../components/MentionText';
 import { ImageZoomViewer } from '../components/ImageZoomViewer';
 import { ShareModal } from '../components/ShareModal';
+import { PostDetailModal } from '../components/PostDetailModal';
 import { Video, ResizeMode } from 'expo-av';
 
 type FeedPost = {
@@ -134,6 +135,8 @@ export default function UserProfileScreen() {
   const [lastTranslate] = useState({ x: 0, y: 0 });
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [postToShare, setPostToShare] = useState<FeedPost | null>(null);
+  const [postDetailModalVisible, setPostDetailModalVisible] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<FeedPost | null>(null);
   const [followersList, setFollowersList] = useState<FollowEntry[]>([]);
   const [followingList, setFollowingList] = useState<FollowEntry[]>([]);
   const [followersLoading, setFollowersLoading] = useState(false);
@@ -1576,7 +1579,13 @@ export default function UserProfileScreen() {
                   />
                   <Text style={styles.actionText}>{post.likes_count}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => {
+                    setSelectedPost(post);
+                    setPostDetailModalVisible(true);
+                  }}
+                >
                   <FontAwesome name="comment-o" size={20} color="#666" />
                   <Text style={styles.actionText}>{post.comments_count}</Text>
                 </TouchableOpacity>
@@ -1937,6 +1946,49 @@ export default function UserProfileScreen() {
           }}
           post={postToShare}
           onShareToTimeline={handleShareToTimelineStable}
+        />
+      )}
+
+      {/* Post Detail Modal */}
+      {selectedPost && (
+        <PostDetailModal
+          visible={postDetailModalVisible}
+          post={selectedPost}
+          onClose={() => {
+            setPostDetailModalVisible(false);
+            setSelectedPost(null);
+            // Refresh profile to get updated post data
+            fetchProfile();
+          }}
+          onUpdatePost={(updatedPost) => {
+            // Update the post in the profile's recent_posts
+            setProfile((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                recent_posts: prev.recent_posts.map((p) =>
+                  p.id === selectedPost.id ? { ...p, ...updatedPost } : p
+                ),
+              };
+            });
+          }}
+          onLike={async (postId) => {
+            // Handle like
+            const post = profile?.recent_posts.find((p) => p.id === postId);
+            if (post) {
+              await handleLike(post);
+            }
+          }}
+          onShare={(post) => {
+            handleShare(post);
+          }}
+          onOpenProfile={(userId) => {
+            // Find the user from the post and navigate to their profile
+            const post = profile?.recent_posts.find((p) => p.id === selectedPost.id);
+            if (post) {
+              router.push(`/${post.user.username}` as any);
+            }
+          }}
         />
       )}
     </View>

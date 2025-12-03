@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../lib/apiClient';
 import Toast from 'react-native-toast-message';
 
@@ -25,41 +25,70 @@ type UseNotificationsReturn = {
   notifications: Notification[];
   unreadCount: number;
   isLoading: boolean;
+  isLoadingMore: boolean;
+  hasMore: boolean;
   error: string | null;
-  loadNotifications: (unreadOnly?: boolean) => Promise<void>;
+  loadNotifications: (unreadOnly?: boolean, reset?: boolean) => Promise<void>;
+  loadMore: (unreadOnly?: boolean) => Promise<void>;
   markAsRead: (notificationId: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
+const INITIAL_PER_PAGE = 12;
+const PER_PAGE = 12;
+
 export function useNotifications(): UseNotificationsReturn {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [currentFilter, setCurrentFilter] = useState<'all' | 'unread'>('all');
   const [error, setError] = useState<string | null>(null);
+  const currentPageRef = useRef(1);
 
-  const loadNotifications = useCallback(async (unreadOnly = false) => {
-    setIsLoading(true);
+  const loadNotifications = useCallback(async (unreadOnly = false, reset = true) => {
+    if (reset) {
+      setIsLoading(true);
+      currentPageRef.current = 1;
+      setCurrentPage(1);
+    } else {
+      setIsLoadingMore(true);
+    }
     setError(null);
+    setCurrentFilter(unreadOnly ? 'unread' : 'all');
+    
     try {
       const params = new URLSearchParams();
       if (unreadOnly) {
         params.append('unread_only', 'true');
       }
-      params.append('per_page', '50');
+      
+      const page = reset ? 1 : currentPageRef.current + 1;
+      params.append('page', page.toString());
+      params.append('per_page', reset ? INITIAL_PER_PAGE.toString() : PER_PAGE.toString());
 
       const response = await apiClient.get<Notification[]>(
         `/v1/notifications?${params.toString()}`
       );
 
       if (response.ok && response.data) {
-        // apiClient unwraps the data, but we need to check meta
         const notificationsData = Array.isArray(response.data) 
           ? response.data 
           : (response.data as any).data || [];
         const meta = (response.data as any).meta || response.meta;
         
-        setNotifications(notificationsData);
+        if (reset) {
+          setNotifications(notificationsData);
+        } else {
+          setNotifications((prev) => [...prev, ...notificationsData]);
+        }
+        
+        currentPageRef.current = page;
+        setCurrentPage(page);
+        setLastPage(meta?.last_page || 1);
         setUnreadCount(meta?.unread_count || 0);
       } else {
         setError(response.errors?.[0]?.detail || 'Failed to load notifications');
@@ -70,8 +99,16 @@ export function useNotifications(): UseNotificationsReturn {
       console.error('Error loading notifications:', err);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, []);
+
+  const loadMore = useCallback(async (unreadOnly?: boolean) => {
+    const filter = unreadOnly !== undefined ? unreadOnly : currentFilter === 'unread';
+    if (currentPageRef.current < lastPage && !isLoadingMore) {
+      await loadNotifications(filter, false);
+    }
+  }, [lastPage, isLoadingMore, currentFilter, loadNotifications]);
 
   const markAsRead = useCallback(async (notificationId: string) => {
     try {
@@ -142,19 +179,24 @@ export function useNotifications(): UseNotificationsReturn {
   }, []);
 
   const refresh = useCallback(() => {
-    return loadNotifications(false);
-  }, [loadNotifications]);
+    return loadNotifications(currentFilter === 'unread', true);
+  }, [loadNotifications, currentFilter]);
 
   useEffect(() => {
-    loadNotifications(false);
-  }, [loadNotifications]);
+    loadNotifications(false, true);
+  }, []);
+
+  const hasMore = currentPageRef.current < lastPage;
 
   return {
     notifications,
     unreadCount,
     isLoading,
+    isLoadingMore,
+    hasMore,
     error,
     loadNotifications,
+    loadMore,
     markAsRead,
     markAllAsRead,
     refresh,

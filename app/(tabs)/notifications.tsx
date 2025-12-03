@@ -20,13 +20,36 @@ type FilterType = 'all' | 'unread';
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { notifications, unreadCount, isLoading, error, markAsRead, markAllAsRead, refresh } = useNotifications();
+  const { 
+    notifications, 
+    unreadCount, 
+    isLoading, 
+    isLoadingMore,
+    hasMore,
+    error, 
+    loadNotifications,
+    loadMore,
+    markAsRead, 
+    markAllAsRead, 
+    refresh 
+  } = useNotifications();
   const [filter, setFilter] = useState<FilterType>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   const filteredNotifications = filter === 'unread'
     ? notifications.filter((n) => !n.read_at)
     : notifications;
+
+  const handleFilterChange = useCallback((newFilter: FilterType) => {
+    setFilter(newFilter);
+    loadNotifications(newFilter === 'unread', true);
+  }, [loadNotifications]);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !isLoadingMore) {
+      loadMore(filter === 'unread');
+    }
+  }, [hasMore, isLoadingMore, loadMore, filter]);
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -183,7 +206,7 @@ export default function NotificationsScreen() {
       <View style={styles.filterTabs}>
         <TouchableOpacity
           style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
+          onPress={() => handleFilterChange('all')}
         >
           <Text style={[styles.filterTabText, filter === 'all' && styles.filterTabTextActive]}>
             All
@@ -191,7 +214,7 @@ export default function NotificationsScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.filterTab, filter === 'unread' && styles.filterTabActive]}
-          onPress={() => setFilter('unread')}
+          onPress={() => handleFilterChange('unread')}
         >
           <Text style={[styles.filterTabText, filter === 'unread' && styles.filterTabTextActive]}>
             Unread {unreadCount > 0 && `(${unreadCount})`}
@@ -271,6 +294,24 @@ export default function NotificationsScreen() {
               </TouchableOpacity>
             );
           })
+        )}
+        
+        {/* Show More Button */}
+        {hasMore && filteredNotifications.length > 0 && (
+          <View style={styles.loadMoreContainer}>
+            <TouchableOpacity
+              style={styles.loadMoreButton}
+              onPress={handleLoadMore}
+              disabled={isLoadingMore}
+              activeOpacity={0.7}
+            >
+              {isLoadingMore ? (
+                <ActivityIndicator size="small" color="#FF6B00" />
+              ) : (
+                <Text style={styles.loadMoreText}>Show more</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         )}
       </ScrollView>
     </View>
@@ -430,6 +471,26 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#FF6B00',
     marginLeft: 8,
+  },
+  loadMoreContainer: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  loadMoreButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    minWidth: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadMoreText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FF6B00',
   },
 });
 

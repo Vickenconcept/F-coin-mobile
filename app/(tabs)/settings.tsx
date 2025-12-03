@@ -115,25 +115,66 @@ export default function SettingsScreen() {
 
   // Listen for deep links (OAuth callbacks)
   useEffect(() => {
-    const subscription = Linking.addEventListener('url', (event) => {
-      const { url } = event;
-      console.log('Deep link received:', url);
+    const handleOAuthCallback = (url: string) => {
+      console.log('🔐 Settings: OAuth callback deep link received:', url);
       
-      // Check if it's an OAuth callback
-      if (url.includes('oauth-callback') || url.includes('oauth')) {
-        // Reload accounts after OAuth callback
-        setTimeout(() => {
-          loadAccounts();
-        }, 1000);
+      // Check if it's an OAuth callback (handles both mobile://oauth/* and https://*oauth*)
+      if (url.includes('oauth') || url.includes('oauth-callback') || url.startsWith('mobile://oauth/')) {
+        try {
+          // Parse query parameters from URL
+          const queryString = url.split('?')[1];
+          const queryParams: Record<string, string> = {};
+          
+          if (queryString) {
+            queryString.split('&').forEach((param) => {
+              const [key, value] = param.split('=');
+              if (key && value) {
+                queryParams[key] = decodeURIComponent(value);
+              }
+            });
+          }
+          
+          const status = queryParams.status;
+          const message = queryParams.message;
+          const provider = queryParams.provider || 'account';
+          
+          // Show toast based on status
+          if (status === 'success') {
+            Toast.show({
+              type: 'success',
+              text1: 'Connected',
+              text2: message || `${provider} account connected successfully`,
+            });
+          } else if (status === 'error') {
+            Toast.show({
+              type: 'error',
+              text1: 'Connection Failed',
+              text2: message || 'Failed to connect account',
+            });
+          }
+          
+          // Reload accounts after OAuth callback
+          setTimeout(() => {
+            loadAccounts();
+          }, 1000);
+        } catch (error) {
+          console.error('Error parsing OAuth callback URL:', error);
+          // Still reload accounts even if parsing fails
+          setTimeout(() => {
+            loadAccounts();
+          }, 1000);
+        }
       }
+    };
+
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleOAuthCallback(event.url);
     });
 
     // Check if app was opened with a deep link
     Linking.getInitialURL().then((url) => {
-      if (url && (url.includes('oauth-callback') || url.includes('oauth'))) {
-        setTimeout(() => {
-          loadAccounts();
-        }, 1000);
+      if (url) {
+        handleOAuthCallback(url);
       }
     });
 
@@ -213,14 +254,89 @@ export default function SettingsScreen() {
           text2: 'Checking connection status...',
         });
         
-        // Poll for account updates
-        setTimeout(() => {
-          loadAccounts();
-        }, 2000);
+        // Poll for account updates (works in both Expo Go and production builds)
+        // In Expo Go, deep links don't work, so we rely on polling
+        // In production builds, deep links will work, but polling is a backup
+        let pollCount = 0;
+        const maxPolls = 15; // Poll for 30 seconds (15 * 2 seconds)
         
-        setTimeout(() => {
-          loadAccounts();
-        }, 5000);
+        // Capture initial state before connection attempt
+        const accountsBeforeConnection = [...accounts];
+        const hadProviderBefore = accountsBeforeConnection.some(acc => acc.provider === provider);
+        
+        console.log(`🔄 OAuth: Starting polling for ${provider}`, {
+          accountsBefore: accountsBeforeConnection.length,
+          hadProviderBefore,
+        });
+        
+        const pollInterval = setInterval(async () => {
+          pollCount++;
+          console.log(`🔄 OAuth polling: Attempt ${pollCount}/${maxPolls} for ${provider}`);
+          
+          try {
+            // Get fresh accounts directly from API (don't rely on state)
+            const response = await apiClient.get<SocialAccount[]>('/v1/oauth/accounts');
+            if (response.ok && Array.isArray(response.data)) {
+              const currentAccounts = response.data;
+              const accountsAfter = currentAccounts.length;
+              const hasProviderAccount = currentAccounts.some(acc => acc.provider === provider);
+              
+              console.log(`🔄 OAuth polling: ${provider}`, {
+                accountsBefore: accountsBeforeConnection.length,
+                accountsAfter,
+                hadProviderBefore,
+                hasProviderAccount,
+                pollCount,
+              });
+              
+              // Update state so UI reflects the change
+              setAccounts(currentAccounts);
+              
+              // If provider account was added (didn't exist before, exists now), connection successful
+              if (hasProviderAccount && !hadProviderBefore) {
+                clearInterval(pollInterval);
+                console.log(`✅ OAuth polling: ${provider} connection detected!`);
+                Toast.show({
+                  type: 'success',
+                  text1: 'Connected',
+                  text2: `${PROVIDER_INFO[provider]?.name || provider} account connected successfully`,
+                });
+                return;
+              }
+            }
+          } catch (error) {
+            console.error('Error polling for accounts:', error);
+          }
+          
+          // Stop polling after max attempts
+          if (pollCount >= maxPolls) {
+            clearInterval(pollInterval);
+            console.log(`⏱️ OAuth polling: Max attempts reached for ${provider}`);
+            // Final check
+            try {
+              const finalResponse = await apiClient.get<SocialAccount[]>('/v1/oauth/accounts');
+              if (finalResponse.ok && Array.isArray(finalResponse.data)) {
+                const finalHasAccount = finalResponse.data.some(acc => acc.provider === provider);
+                setAccounts(finalResponse.data); // Update state
+                if (finalHasAccount) {
+                  Toast.show({
+                    type: 'success',
+                    text1: 'Connected',
+                    text2: `${PROVIDER_INFO[provider]?.name || provider} account connected`,
+                  });
+                } else {
+                  Toast.show({
+                    type: 'info',
+                    text1: 'Check Connection',
+                    text2: 'Please check if the connection was successful in settings',
+                  });
+                }
+              }
+            } catch (error) {
+              console.error('Error in final account check:', error);
+            }
+          }
+        }, 2000);
       }
     } catch (error) {
       console.error('Connect account error:', error);

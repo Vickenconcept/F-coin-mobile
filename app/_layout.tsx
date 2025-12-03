@@ -35,22 +35,97 @@ function RootLayoutNav() {
 
   // Handle deep linking
   useEffect(() => {
+    // Global OAuth callback handler (works even if settings screen isn't mounted)
+    const handleOAuthCallback = (url: string) => {
+      console.log('🔐 _layout: Checking URL for OAuth callback:', url);
+      
+      // Check if it's an OAuth callback - be more specific to avoid false positives
+      const isOAuthCallback = 
+        url.startsWith('mobile://oauth/') || 
+        (url.includes('oauth') && (url.includes('/callback') || url.includes('oauth-callback')));
+      
+      if (isOAuthCallback) {
+        console.log('🔐 _layout: OAuth callback detected, navigating to oauth route:', url);
+        
+        try {
+          // Parse query parameters manually (mobile:// scheme doesn't work with URL constructor)
+          const queryString = url.split('?')[1];
+          const params: Record<string, string> = {};
+          
+          if (queryString) {
+            queryString.split('&').forEach((param) => {
+              const [key, value] = param.split('=');
+              if (key && value) {
+                params[key] = decodeURIComponent(value);
+              }
+            });
+          }
+          
+          const status = params.status;
+          const message = params.message;
+          const provider = params.provider || 'account';
+          
+          // Show toast
+          if (status === 'success') {
+            Toast.show({
+              type: 'success',
+              text1: 'Connected',
+              text2: message || `${provider} account connected successfully`,
+            });
+          } else if (status === 'error') {
+            Toast.show({
+              type: 'error',
+              text1: 'Connection Failed',
+              text2: message || 'Failed to connect account',
+            });
+          }
+          
+          // Navigate to OAuth callback route (catch-all route will handle it)
+          // This prevents expo-router from showing "ops screen doesn't exist"
+          if (isAuthenticated && !loading) {
+            // Use replace to prevent back navigation
+            router.replace({
+              pathname: '/oauth/[...params]',
+              params: params,
+            } as any);
+          }
+        } catch (error) {
+          console.error('Error parsing OAuth callback:', error);
+          // Fallback: just navigate to settings
+          if (isAuthenticated && !loading) {
+            router.replace('/(tabs)/settings');
+          }
+        }
+        
+        return true; // Indicate we handled it
+      }
+      return false;
+    };
+
     // Handle initial URL (app opened from a link)
     Linking.getInitialURL().then((url) => {
       if (url) {
-        handleDeepLink(url);
+        console.log('🔗 _layout: Initial URL:', url);
+        // Check if it's an OAuth callback first
+        if (!handleOAuthCallback(url)) {
+          handleDeepLink(url);
+        }
       }
     });
 
     // Handle deep links while app is running
     const subscription = Linking.addEventListener('url', (event) => {
-      handleDeepLink(event.url);
+      console.log('🔗 _layout: Deep link event received:', event.url);
+      // Check if it's an OAuth callback first
+      if (!handleOAuthCallback(event.url)) {
+        handleDeepLink(event.url);
+      }
     });
 
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [isAuthenticated, loading, router]);
 
   const handleDeepLink = (url: string) => {
     console.log('🔗 Deep link received:', url);
@@ -101,9 +176,17 @@ function RootLayoutNav() {
         }
       }
       
-      // Handle custom scheme links: mobile://posts/{postId}
+      // Handle custom scheme links: mobile://posts/{postId} or mobile://oauth/*
       if (parsed.scheme === 'mobile') {
         const pathSegments = parsed.path?.split('/').filter(Boolean) || [];
+        
+        // Handle OAuth callbacks: mobile://oauth/{provider}/callback
+        // Don't navigate - let the settings screen's listener handle it
+        if (pathSegments[0] === 'oauth') {
+          console.log('🔐 OAuth callback deep link detected in _layout - letting settings screen handle it');
+          // Return early without navigating - the settings screen's Linking listener will catch it
+          return;
+        }
         
         if (pathSegments[0] === 'posts' && pathSegments[1]) {
           const postId = pathSegments[1];
