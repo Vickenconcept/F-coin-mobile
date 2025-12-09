@@ -52,6 +52,8 @@ type RecentEngagement = {
   loggedAt: string | null;
   rewardGiven: boolean;
   rewardAmount: number | null;
+  status?: string;
+  status_reason?: string;
 };
 
 type EarnedCoinEntry = {
@@ -111,6 +113,7 @@ export default function DashboardScreen() {
       
       if (response.ok && Array.isArray(response.data)) {
         const mapped: RecentEngagement[] = response.data.map((item) => {
+          // Try to get fan name from multiple sources, including metadata
           const fanName =
             item?.fan?.display_name ??
             item?.fan?.username ??
@@ -140,6 +143,8 @@ export default function DashboardScreen() {
                 : item?.reward_amount
                 ? Number(item.reward_amount)
                 : null,
+            status: item?.status || (item?.reward_given ? 'rewarded' : 'pending'),
+            status_reason: item?.status_reason || null,
           };
         });
 
@@ -378,6 +383,9 @@ export default function DashboardScreen() {
                         item.postTitle ? ` "${item.postTitle}"` : ''
                       }.`;
 
+                      const isRewarded = item.status === 'rewarded' || item.rewardGiven;
+                      const isNotEligible = item.status === 'not_eligible';
+
                       return (
                         <View key={item.id} style={styles.engagementItem}>
                           <View style={styles.engagementIcon}>
@@ -391,10 +399,30 @@ export default function DashboardScreen() {
                                 <Text style={styles.platformBadgeText}>{item.platform}</Text>
                               </View>
                               <Text style={styles.engagementTime}>{formatTimeAgo(item.loggedAt)}</Text>
-                              <View style={[styles.rewardBadge, item.rewardGiven ? styles.rewardBadgeSuccess : styles.rewardBadgePending]}>
-                                <Text style={styles.rewardBadgeText}>{item.rewardGiven ? 'Rewarded' : 'Pending'}</Text>
+                              <View style={[
+                                styles.rewardBadge, 
+                                isRewarded ? styles.rewardBadgeSuccess : 
+                                isNotEligible ? styles.rewardBadgeError : 
+                                styles.rewardBadgePending
+                              ]}>
+                                <Text style={[
+                                  styles.rewardBadgeText,
+                                  isRewarded ? styles.rewardBadgeTextSuccess :
+                                  isNotEligible ? styles.rewardBadgeTextError :
+                                  styles.rewardBadgeTextPending
+                                ]}>
+                                  {isRewarded ? 'Rewarded' : isNotEligible ? 'Not Eligible' : 'Pending'}
+                                </Text>
                               </View>
                             </View>
+                            {item.status_reason && !isRewarded && (
+                              <Text style={styles.statusReason}>{item.status_reason}</Text>
+                            )}
+                            {item.rewardAmount && isRewarded && (
+                              <Text style={styles.rewardAmount}>
+                                +{item.rewardAmount.toFixed(4)} coins
+                              </Text>
+                            )}
                           </View>
                         </View>
                       );
@@ -403,7 +431,7 @@ export default function DashboardScreen() {
                 )}
                 <TouchableOpacity
                   style={styles.viewAllButton}
-                  onPress={() => router.push('/(tabs)/settings' as any)}
+                  onPress={() => router.push('/engagements' as any)}
                 >
                   <Text style={styles.viewAllButtonText}>View All Engagement</Text>
                   <FontAwesome name="arrow-right" size={14} color="#FF6B00" />
@@ -704,9 +732,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFE5D4',
   },
+  rewardBadgeError: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
   rewardBadgeText: {
     fontSize: 11,
     fontWeight: '600',
+    color: '#065f46',
+  },
+  rewardBadgeTextSuccess: {
+    color: '#065f46',
+  },
+  rewardBadgeTextPending: {
+    color: '#92400e',
+  },
+  rewardBadgeTextError: {
+    color: '#991b1b',
+  },
+  statusReason: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  rewardAmount: {
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '600',
+    marginTop: 4,
   },
   viewAllButton: {
     flexDirection: 'row',

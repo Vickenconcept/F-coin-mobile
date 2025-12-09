@@ -49,6 +49,7 @@ export function ImageZoomViewer({
   const videoRefs = useRef<Record<number, Video | null>>({});
   const [videoPlaybackStatus, setVideoPlaybackStatus] = useState<Record<number, AVPlaybackStatusSuccess | null>>({});
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [showReplayButton, setShowReplayButton] = useState<Record<number, boolean>>({});
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const getAnimatedValue = (value: Animated.Value) => {
     if (typeof (value as any).__getValue === 'function') {
@@ -65,6 +66,8 @@ export function ImageZoomViewer({
       });
       // Reset loading states when modal opens
       setVideoLoadingStates({});
+      // Reset replay button states when modal opens
+      setShowReplayButton({});
     }
   }, [visible, initialIndex]);
 
@@ -111,12 +114,38 @@ export function ImageZoomViewer({
         if (status.didJustFinish) {
           await video.setPositionAsync(0);
           await video.playAsync();
+          // Hide replay button and show controls when replaying
+          setShowReplayButton((prev) => ({ ...prev, [index]: false }));
+          setControlsVisible(true);
+          if (controlsTimeoutRef.current) {
+            clearTimeout(controlsTimeoutRef.current);
+          }
+          controlsTimeoutRef.current = setTimeout(() => {
+            setControlsVisible(false);
+          }, 3000);
         } else if (status.isPlaying) {
           await video.pauseAsync();
         } else {
           await video.playAsync();
         }
       }
+    }
+  };
+
+  const handleReplay = async (index: number) => {
+    const video = videoRefs.current[index];
+    if (video) {
+      await video.setPositionAsync(0);
+      await video.playAsync();
+      // Hide replay button and show controls when replaying
+      setShowReplayButton((prev) => ({ ...prev, [index]: false }));
+      setControlsVisible(true);
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      controlsTimeoutRef.current = setTimeout(() => {
+        setControlsVisible(false);
+      }, 3000);
     }
   };
 
@@ -278,6 +307,8 @@ export function ImageZoomViewer({
             onIndexChange(index);
             // Show controls for new video (but don't set loading state - only show when actually loading)
             if (media[index]?.type === 'video') {
+              // Reset replay button state for the new video
+              setShowReplayButton((prev) => ({ ...prev, [index]: false }));
               setControlsVisible(true);
               if (controlsTimeoutRef.current) {
                 clearTimeout(controlsTimeoutRef.current);
@@ -373,52 +404,78 @@ export function ImageZoomViewer({
                           [index]: false,
                         }));
                       }
-                      // Show controls when video ends
+                      // Show replay button when video ends, hide normal controls
                       if (status.didJustFinish) {
+                        setShowReplayButton((prev) => ({ ...prev, [index]: true }));
+                        setControlsVisible(false);
+                        if (controlsTimeoutRef.current) {
+                          clearTimeout(controlsTimeoutRef.current);
+                        }
+                      }
+                      // Hide replay button when video starts playing again
+                      if (status.isPlaying && showReplayButton[index]) {
+                        setShowReplayButton((prev) => ({ ...prev, [index]: false }));
                         setControlsVisible(true);
                         if (controlsTimeoutRef.current) {
                           clearTimeout(controlsTimeoutRef.current);
                         }
                         controlsTimeoutRef.current = setTimeout(() => {
                           setControlsVisible(false);
-                        }, 5000); // Show controls longer when video ends
+                        }, 3000);
                       }
                     }}
                   />
-                  {!videoLoadingStates[index] && controlsVisible && index === initialIndex && (
-                    <View style={styles.videoControls}>
-                      <TouchableOpacity
-                        style={styles.controlButton}
-                        onPress={() => seekBackward(index)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <FontAwesome name="backward" size={24} color="#fff" />
-                        <Text style={styles.controlButtonText}>10s</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.playPauseButton}
-                        onPress={() => togglePlayPause(index)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <FontAwesome
-                          name={
-                            videoPlaybackStatus[index]?.isLoaded && videoPlaybackStatus[index]?.isPlaying
-                              ? 'pause'
-                              : 'play'
-                          }
-                          size={32}
-                          color="#fff"
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.controlButton}
-                        onPress={() => seekForward(index)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <FontAwesome name="forward" size={24} color="#fff" />
-                        <Text style={styles.controlButtonText}>10s</Text>
-                      </TouchableOpacity>
-                    </View>
+                  {!videoLoadingStates[index] && index === initialIndex && (
+                    <>
+                      {/* Show replay button when video finished */}
+                      {showReplayButton[index] && (
+                        <View style={styles.videoControls}>
+                          <TouchableOpacity
+                            style={styles.playPauseButton}
+                            onPress={() => handleReplay(index)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <FontAwesome name="repeat" size={32} color="#fff" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      {/* Show normal controls when video is playing/paused (not finished) */}
+                      {!showReplayButton[index] && controlsVisible && (
+                        <View style={styles.videoControls}>
+                          <TouchableOpacity
+                            style={styles.controlButton}
+                            onPress={() => seekBackward(index)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <FontAwesome name="backward" size={24} color="#fff" />
+                            <Text style={styles.controlButtonText}>10s</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.playPauseButton}
+                            onPress={() => togglePlayPause(index)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <FontAwesome
+                              name={
+                                videoPlaybackStatus[index]?.isLoaded && videoPlaybackStatus[index]?.isPlaying
+                                  ? 'pause'
+                                  : 'play'
+                              }
+                              size={32}
+                              color="#fff"
+                            />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.controlButton}
+                            onPress={() => seekForward(index)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <FontAwesome name="forward" size={24} color="#fff" />
+                            <Text style={styles.controlButtonText}>10s</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </>
                   )}
                 </TouchableOpacity>
               )}

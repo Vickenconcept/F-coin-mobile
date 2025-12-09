@@ -292,13 +292,14 @@ export default function MyCoinScreen() {
 
     setIsTopUpLoading(true);
     try {
-      // Use a valid HTTP URL for return_url (backend validation requires valid URL)
-      // Get the base URL from environment, removing /api suffix if present
+      // Use backend callback URL with mobile origin indicator
+      // The backend will detect mobile and redirect to mobile deep link
       const apiBaseUrl = 
         Constants.expoConfig?.extra?.apiBaseUrl?.replace(/\/api\/?$/, '') ||
         process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/api\/?$/, '') ||
         'http://localhost:8000';
-      const returnUrl = `${apiBaseUrl}/dashboard/my-coin?payment=success`;
+      // Use mobile-payment-callback in origin so backend can detect it's mobile
+      const returnUrl = `${apiBaseUrl}/mobile-payment-callback`;
       const response = await apiClient.post<{ checkout_url: string }>('/v1/wallets/topups', {
         amount: amountValue,
         coin_symbol: selectedCoin.symbol,

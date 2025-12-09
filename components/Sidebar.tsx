@@ -24,7 +24,7 @@ export function Sidebar() {
     { name: 'Home', icon: 'home', path: '/(tabs)/feed' },
     { name: 'Explore', icon: 'compass', path: '/discover' },
     { name: 'Notifications', icon: 'bell', path: '/(tabs)/notifications', badge: unreadCount || 0 },
-    { name: 'Messages', icon: 'envelope', path: '/(tabs)/feed' }, // TODO: Add messages screen
+    { name: 'Messages', icon: 'envelope', path: '/(tabs)/messaging' },
     { name: 'Profile', icon: 'user', path: `/profile` },
     { name: 'My Coin', icon: 'money', path: '/(tabs)/my-coin' },
     { name: 'Wallet', icon: 'credit-card', path: '/(tabs)/wallet' },

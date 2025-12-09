@@ -35,6 +35,71 @@ function RootLayoutNav() {
 
   // Handle deep linking
   useEffect(() => {
+    // Global payment callback handler
+    const handlePaymentCallback = (url: string) => {
+      console.log('💳 _layout: Checking URL for payment callback:', url);
+      
+      // Check if it's a payment callback
+      const isPaymentCallback = 
+        url.startsWith('mobile://payment/') || 
+        (url.includes('payment') && url.includes('/callback'));
+      
+      if (isPaymentCallback) {
+        console.log('💳 _layout: Payment callback detected, navigating to payment route:', url);
+        
+        try {
+          // Parse query parameters manually
+          const queryString = url.split('?')[1];
+          const params: Record<string, string> = {};
+          
+          if (queryString) {
+            queryString.split('&').forEach((param) => {
+              const [key, value] = param.split('=');
+              if (key && value) {
+                params[key] = decodeURIComponent(value);
+              }
+            });
+          }
+          
+          const status = params.status;
+          const message = params.message;
+          const sessionId = params.session_id;
+          
+          // Show toast
+          if (status === 'success') {
+            Toast.show({
+              type: 'success',
+              text1: 'Payment Successful',
+              text2: message || 'Your payment was completed successfully',
+            });
+          } else if (status === 'error' || status === 'cancel') {
+            Toast.show({
+              type: status === 'cancel' ? 'info' : 'error',
+              text1: status === 'cancel' ? 'Payment Cancelled' : 'Payment Failed',
+              text2: message || (status === 'cancel' ? 'Payment was cancelled' : 'Payment failed'),
+            });
+          }
+          
+          // Navigate to payment callback route
+          if (isAuthenticated && !loading) {
+            router.replace({
+              pathname: '/payment/[...params]',
+              params: params,
+            } as any);
+          }
+        } catch (error) {
+          console.error('Error parsing payment callback:', error);
+          // Fallback: navigate to my-coin screen
+          if (isAuthenticated && !loading) {
+            router.replace('/(tabs)/my-coin');
+          }
+        }
+        
+        return true; // Indicate we handled it
+      }
+      return false;
+    };
+
     // Global OAuth callback handler (works even if settings screen isn't mounted)
     const handleOAuthCallback = (url: string) => {
       console.log('🔐 _layout: Checking URL for OAuth callback:', url);
@@ -106,8 +171,8 @@ function RootLayoutNav() {
     Linking.getInitialURL().then((url) => {
       if (url) {
         console.log('🔗 _layout: Initial URL:', url);
-        // Check if it's an OAuth callback first
-        if (!handleOAuthCallback(url)) {
+        // Check payment callback first, then OAuth, then general deep links
+        if (!handlePaymentCallback(url) && !handleOAuthCallback(url)) {
           handleDeepLink(url);
         }
       }
@@ -116,8 +181,8 @@ function RootLayoutNav() {
     // Handle deep links while app is running
     const subscription = Linking.addEventListener('url', (event) => {
       console.log('🔗 _layout: Deep link event received:', event.url);
-      // Check if it's an OAuth callback first
-      if (!handleOAuthCallback(event.url)) {
+      // Check payment callback first, then OAuth, then general deep links
+      if (!handlePaymentCallback(event.url) && !handleOAuthCallback(event.url)) {
         handleDeepLink(event.url);
       }
     });
@@ -256,6 +321,20 @@ function RootLayoutNav() {
         />
         <Stack.Screen 
           name="posts/[postId]" 
+          options={{ 
+            headerShown: false,
+            presentation: 'card',
+          }} 
+        />
+        <Stack.Screen 
+          name="engagements" 
+          options={{ 
+            headerShown: false,
+            presentation: 'card',
+          }} 
+        />
+        <Stack.Screen 
+          name="messaging" 
           options={{ 
             headerShown: false,
             presentation: 'card',

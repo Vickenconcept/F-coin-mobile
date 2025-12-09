@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -80,7 +81,23 @@ export default function SettingsScreen() {
   const [notificationPrefsDirty, setNotificationPrefsDirty] = useState(false);
 
   // Active tab
-  const [activeTab, setActiveTab] = useState<'social' | 'notifications' | 'account'>('social');
+  const [activeTab, setActiveTab] = useState<'social' | 'notifications' | 'messaging' | 'account'>('social');
+
+  // Messaging settings state
+  const [messagingSettings, setMessagingSettings] = useState<Record<string, string>>({});
+  const [isLoadingMessagingSettings, setIsLoadingMessagingSettings] = useState(false);
+  const [isSavingMessagingSettings, setIsSavingMessagingSettings] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<Array<{
+    id: string;
+    user: {
+      id: string;
+      username: string;
+      display_name: string;
+      avatar_url: string | null;
+    };
+    blocked_at: string;
+  }>>([]);
+  const [isLoadingBlocks, setIsLoadingBlocks] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     setIsLoading(true);
@@ -110,8 +127,123 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (activeTab === 'social') {
       loadAccounts();
+    } else if (activeTab === 'messaging') {
+      loadMessagingSettings();
+      loadBlockedUsers();
     }
   }, [activeTab, loadAccounts]);
+
+  const loadMessagingSettings = useCallback(async () => {
+    setIsLoadingMessagingSettings(true);
+    try {
+      const response = await apiClient.get<Record<string, string>>('/v1/settings');
+      if (response.ok && response.data) {
+        setMessagingSettings(response.data);
+      }
+    } catch (error) {
+      console.error('Load messaging settings error:', error);
+    } finally {
+      setIsLoadingMessagingSettings(false);
+    }
+  }, []);
+
+  const loadBlockedUsers = useCallback(async () => {
+    setIsLoadingBlocks(true);
+    try {
+      const response = await apiClient.get<{
+        data: Array<{
+          id: string;
+          user: {
+            id: string;
+            username: string;
+            display_name: string;
+            avatar_url: string | null;
+          };
+          blocked_at: string;
+        }>;
+      }>('/v1/blocks');
+      if (response.ok && response.data) {
+        setBlockedUsers(Array.isArray(response.data) ? response.data : []);
+      }
+    } catch (error) {
+      console.error('Load blocked users error:', error);
+    } finally {
+      setIsLoadingBlocks(false);
+    }
+  }, []);
+
+  const updateMessagingSetting = useCallback(async (key: string, value: string) => {
+    setIsSavingMessagingSettings(true);
+    try {
+      const response = await apiClient.request(`/v1/settings/${key}`, {
+        method: 'PUT',
+        data: { value },
+      });
+
+      if (response.ok) {
+        setMessagingSettings((prev) => ({ ...prev, [key]: value }));
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'Setting updated',
+        });
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail ?? 'Failed to update setting',
+        });
+      }
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update setting',
+      });
+    } finally {
+      setIsSavingMessagingSettings(false);
+    }
+  }, []);
+
+  const handleUnblock = useCallback(async (userId: string) => {
+    try {
+      const response = await apiClient.delete(`/v1/blocks/${userId}`);
+      if (response.ok) {
+        setBlockedUsers((prev) => prev.filter((block) => block.user.id !== userId));
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'User unblocked',
+        });
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: response.errors?.[0]?.detail ?? 'Failed to unblock user',
+        });
+      }
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to unblock user',
+      });
+    }
+  }, []);
+
+  const getSettingValue = (key: string, defaultValue = '0') => {
+    return messagingSettings[key] || defaultValue;
+  };
+
+  const isSettingEnabled = (key: string) => {
+    const value = getSettingValue(key);
+    return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+  };
+
+  const toggleSetting = (key: string) => {
+    const newValue = isSettingEnabled(key) ? '0' : '1';
+    updateMessagingSetting(key, newValue);
+  };
 
   // Listen for deep links (OAuth callbacks)
   useEffect(() => {
@@ -520,6 +652,14 @@ export default function SettingsScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
+          style={[styles.tab, activeTab === 'messaging' && styles.tabActive]}
+          onPress={() => setActiveTab('messaging')}
+        >
+          <Text style={[styles.tabText, activeTab === 'messaging' && styles.tabTextActive]}>
+            Messaging
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'account' && styles.tabActive]}
           onPress={() => setActiveTab('account')}
         >
@@ -716,6 +856,117 @@ export default function SettingsScreen() {
                     ))}
                   </View>
                 </View>
+              </View>
+            </View>
+          )}
+
+          {activeTab === 'messaging' && (
+            <View style={styles.tabContent}>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Messaging Preferences</Text>
+                <Text style={styles.sectionSubtext}>
+                  Control who can message you and manage your messaging settings
+                </Text>
+
+                {isLoadingMessagingSettings ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#FF6B00" />
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.settingOption}>
+                      <View style={styles.settingOptionInfo}>
+                        <Text style={styles.settingOptionLabel}>Disable Messaging</Text>
+                        <Text style={styles.settingOptionDescription}>
+                          When enabled, other users cannot send you messages. They will be notified that your account has messaging disabled.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={isSettingEnabled('disable_messaging')}
+                        onValueChange={() => toggleSetting('disable_messaging')}
+                        disabled={isSavingMessagingSettings}
+                        trackColor={{ false: '#e0e0e0', true: '#FF6B00' }}
+                        thumbColor="#fff"
+                      />
+                    </View>
+
+                    <View style={styles.settingOption}>
+                      <View style={styles.settingOptionInfo}>
+                        <Text style={styles.settingOptionLabel}>Messages from Followers Only</Text>
+                        <Text style={styles.settingOptionDescription}>
+                          Only allow messages from users who follow you. Others will need to follow you first.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={isSettingEnabled('allow_messages_from_followers_only')}
+                        onValueChange={() => toggleSetting('allow_messages_from_followers_only')}
+                        disabled={isSavingMessagingSettings || isSettingEnabled('disable_messaging')}
+                        trackColor={{ false: '#e0e0e0', true: '#FF6B00' }}
+                        thumbColor="#fff"
+                      />
+                    </View>
+
+                    {isSettingEnabled('disable_messaging') && (
+                      <View style={styles.infoBox}>
+                        <FontAwesome name="info-circle" size={16} color="#666" />
+                        <Text style={styles.infoBoxText}>
+                          Messaging is disabled. Other users will see a message that your account has blocked messaging when they try to contact you.
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Blocked Users</Text>
+                <Text style={styles.sectionSubtext}>
+                  Users you've blocked cannot see your posts, send you messages, or view your profile.
+                </Text>
+
+                {isLoadingBlocks ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#FF6B00" />
+                  </View>
+                ) : blockedUsers.length === 0 ? (
+                  <View style={styles.emptyContainer}>
+                    <FontAwesome name="ban" size={48} color="#999" />
+                    <Text style={styles.emptyText}>No blocked users</Text>
+                  </View>
+                ) : (
+                  <View style={styles.blockedUsersList}>
+                    {blockedUsers.map((block) => (
+                      <View key={block.id} style={styles.blockedUserItem}>
+                        <View style={styles.blockedUserInfo}>
+                          {block.user.avatar_url ? (
+                            <Image
+                              source={{ uri: block.user.avatar_url }}
+                              style={styles.blockedUserAvatar}
+                            />
+                          ) : (
+                            <View style={[styles.blockedUserAvatar, styles.avatarPlaceholder]}>
+                              <Text style={styles.avatarText}>
+                                {(block.user.display_name || block.user.username).slice(0, 2).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <View>
+                            <Text style={styles.blockedUserName}>
+                              {block.user.display_name || block.user.username}
+                            </Text>
+                            <Text style={styles.blockedUserUsername}>@{block.user.username}</Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.unblockButton}
+                          onPress={() => handleUnblock(block.user.id)}
+                        >
+                          <Text style={styles.unblockButtonText}>Unblock</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             </View>
           )}
@@ -1290,6 +1541,109 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
     fontWeight: '600',
+  },
+  settingOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  settingOptionInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  settingOptionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  settingOptionDescription: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f9f9f9',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  infoBoxText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#999',
+  },
+  blockedUsersList: {
+    marginTop: 12,
+  },
+  blockedUserItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  blockedUserInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  blockedUserAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  blockedUserName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000',
+  },
+  blockedUserUsername: {
+    fontSize: 13,
+    color: '#666',
+  },
+  unblockButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FF6B00',
+    backgroundColor: '#fff',
+  },
+  unblockButtonText: {
+    color: '#FF6B00',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
   },
 });
 

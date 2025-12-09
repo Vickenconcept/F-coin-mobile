@@ -556,6 +556,58 @@ export default function UserProfileScreen() {
     setEditLinks((prev) => prev.filter((link) => link.id !== id));
   }, []);
 
+  const handleStartMessage = useCallback(async () => {
+    if (!profile || profile.is_current_user) return;
+
+    try {
+      const response = await apiClient.request<{
+        data: {
+          id: string;
+          other_user: {
+            id: string;
+            username: string;
+            display_name: string;
+            avatar_url: string | null;
+          };
+          created_at: string;
+        };
+      }>('/v1/conversations/find-or-create', {
+        method: 'POST',
+        data: { user_id: profile.id } as any,
+      });
+
+      if (response.ok && response.data) {
+        const conversationData = (response.data as any)?.data || response.data;
+        const conversationId = conversationData?.id;
+        if (conversationId) {
+          router.push({
+            pathname: '/(tabs)/messaging',
+            params: { conversation: conversationId },
+          } as any);
+          Toast.show({
+            type: 'success',
+            text1: 'Success',
+            text2: 'Conversation started',
+          });
+        }
+      } else {
+        const errorMsg = response.errors?.[0]?.detail ?? 'Failed to start conversation';
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: errorMsg,
+        });
+      }
+    } catch (err) {
+      console.error('[Profile] start message error', err);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to start conversation',
+      });
+    }
+  }, [profile, router]);
+
   const handleFollowToggle = useCallback(async () => {
     if (!profile || profile.is_current_user) return;
     setIsFollowLoading(true);
@@ -1317,9 +1369,16 @@ export default function UserProfileScreen() {
           )}
         </View>
 
-        {/* Follow Button */}
+        {/* Action Buttons */}
         {!profile.is_current_user && (
           <View style={styles.actionContainer}>
+            <TouchableOpacity
+              style={styles.messageButton}
+              onPress={handleStartMessage}
+            >
+              <FontAwesome name="comment" size={16} color="#8B5CF6" />
+              <Text style={styles.messageButtonText}>Message</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.followButton,
@@ -2250,9 +2309,31 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionContainer: {
-    padding: 16,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  messageButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#8B5CF6',
+    backgroundColor: '#fff',
+  },
+  messageButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#8B5CF6',
   },
   followButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
