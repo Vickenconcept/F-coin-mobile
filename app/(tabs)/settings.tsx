@@ -23,22 +23,6 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import Constants from 'expo-constants';
 
-type SocialAccount = {
-  id: string;
-  provider: string;
-  provider_user_id: string | null;
-  provider_username: string | null;
-  connected_at: string | null;
-  last_synced_at: string | null;
-};
-
-const PROVIDER_INFO: Record<string, { name: string; color: string; icon: keyof typeof FontAwesome.glyphMap }> = {
-  facebook: { name: 'Facebook', color: '#1877F2', icon: 'facebook' },
-  instagram: { name: 'Instagram', color: '#E4405F', icon: 'instagram' },
-  tiktok: { name: 'TikTok', color: '#000000', icon: 'music' },
-  youtube: { name: 'YouTube', color: '#FF0000', icon: 'youtube' },
-  tiktok_fan: { name: 'TikTok Fan', color: '#000000', icon: 'user' },
-};
 
 type NotificationPreferences = {
   email: {
@@ -57,12 +41,6 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user, refreshUser, logout } = useAuth();
   const router = useRouter();
-  
-  // Social accounts state
-  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isConnecting, setIsConnecting] = useState<Record<string, boolean>>({});
-  const [refreshing, setRefreshing] = useState(false);
 
   // Notification preferences state
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>({
@@ -81,7 +59,7 @@ export default function SettingsScreen() {
   const [notificationPrefsDirty, setNotificationPrefsDirty] = useState(false);
 
   // Active tab
-  const [activeTab, setActiveTab] = useState<'social' | 'notifications' | 'messaging' | 'account'>('social');
+  const [activeTab, setActiveTab] = useState<'notifications' | 'messaging' | 'account'>('notifications');
 
   // Messaging settings state
   const [messagingSettings, setMessagingSettings] = useState<Record<string, string>>({});
@@ -99,39 +77,12 @@ export default function SettingsScreen() {
   }>>([]);
   const [isLoadingBlocks, setIsLoadingBlocks] = useState(false);
 
-  const loadAccounts = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const response = await apiClient.get<SocialAccount[]>('/v1/oauth/accounts');
-      if (response.ok && Array.isArray(response.data)) {
-        setAccounts(response.data);
-      } else {
-        Toast.show({
-          type: 'error',
-          text1: 'Error',
-          text2: 'Unable to load connected accounts',
-        });
-      }
-    } catch (error) {
-      console.error('Load accounts error:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to load accounts',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    if (activeTab === 'social') {
-      loadAccounts();
-    } else if (activeTab === 'messaging') {
+    if (activeTab === 'messaging') {
       loadMessagingSettings();
       loadBlockedUsers();
     }
-  }, [activeTab, loadAccounts]);
+  }, [activeTab]);
 
   const loadMessagingSettings = useCallback(async () => {
     setIsLoadingMessagingSettings(true);
@@ -245,75 +196,6 @@ export default function SettingsScreen() {
     updateMessagingSetting(key, newValue);
   };
 
-  // Listen for deep links (OAuth callbacks)
-  useEffect(() => {
-    const handleOAuthCallback = (url: string) => {
-      console.log('🔐 Settings: OAuth callback deep link received:', url);
-      
-      // Check if it's an OAuth callback (handles both mobile://oauth/* and https://*oauth*)
-      if (url.includes('oauth') || url.includes('oauth-callback') || url.startsWith('mobile://oauth/')) {
-        try {
-          // Parse query parameters from URL
-          const queryString = url.split('?')[1];
-          const queryParams: Record<string, string> = {};
-          
-          if (queryString) {
-            queryString.split('&').forEach((param) => {
-              const [key, value] = param.split('=');
-              if (key && value) {
-                queryParams[key] = decodeURIComponent(value);
-              }
-            });
-          }
-          
-          const status = queryParams.status;
-          const message = queryParams.message;
-          const provider = queryParams.provider || 'account';
-          
-          // Show toast based on status
-          if (status === 'success') {
-            Toast.show({
-              type: 'success',
-              text1: 'Connected',
-              text2: message || `${provider} account connected successfully`,
-            });
-          } else if (status === 'error') {
-            Toast.show({
-              type: 'error',
-              text1: 'Connection Failed',
-              text2: message || 'Failed to connect account',
-            });
-          }
-          
-          // Reload accounts after OAuth callback
-          setTimeout(() => {
-            loadAccounts();
-          }, 1000);
-        } catch (error) {
-          console.error('Error parsing OAuth callback URL:', error);
-          // Still reload accounts even if parsing fails
-          setTimeout(() => {
-            loadAccounts();
-          }, 1000);
-        }
-      }
-    };
-
-    const subscription = Linking.addEventListener('url', (event) => {
-      handleOAuthCallback(event.url);
-    });
-
-    // Check if app was opened with a deep link
-    Linking.getInitialURL().then((url) => {
-      if (url) {
-        handleOAuthCallback(url);
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [loadAccounts]);
 
   // Track initial preferences to detect changes and prevent reversion
   const [initialNotificationPrefs, setInitialNotificationPrefs] = useState<NotificationPreferences | null>(null);
@@ -340,195 +222,6 @@ export default function SettingsScreen() {
     }
   }, [user, initialNotificationPrefs]);
 
-  const connectAccount = async (provider: string) => {
-    if (isConnecting[provider]) return;
-
-    setIsConnecting((prev) => ({ ...prev, [provider]: true }));
-
-    try {
-      // Get the login URL from backend
-      const apiBaseUrl = 
-        Constants.expoConfig?.extra?.apiBaseUrl || 
-        process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/+$/, '') || 
-        'http://localhost:8000/api';
-      const apiOrigin = apiBaseUrl.replace(/\/api\/?$/, ''); // Remove /api to get origin
-      const origin = `${apiOrigin}/mobile-oauth-callback`; // Valid URL for backend validation
-      
-      const response = await apiClient.get<{ url: string }>(
-        `/v1/oauth/${provider}/login-url?origin=${encodeURIComponent(origin)}`
-      );
-
-      if (!response.ok || !response.data?.url) {
-        Toast.show({
-          type: 'error',
-          text1: 'Error',
-          text2: `Unable to start ${provider} connection`,
-        });
-        return;
-      }
-
-      // Open the OAuth URL in browser
-      const result = await WebBrowser.openBrowserAsync(response.data.url, {
-        enableBarCollapsing: false,
-      });
-
-      // After browser closes, check if connection was successful
-      if (result.type === 'cancel') {
-        Toast.show({
-          type: 'info',
-          text1: 'Cancelled',
-          text2: 'Connection cancelled',
-        });
-      } else {
-        Toast.show({
-          type: 'info',
-          text1: 'Processing...',
-          text2: 'Checking connection status...',
-        });
-        
-        // Poll for account updates (works in both Expo Go and production builds)
-        // In Expo Go, deep links don't work, so we rely on polling
-        // In production builds, deep links will work, but polling is a backup
-        let pollCount = 0;
-        const maxPolls = 15; // Poll for 30 seconds (15 * 2 seconds)
-        
-        // Capture initial state before connection attempt
-        const accountsBeforeConnection = [...accounts];
-        const hadProviderBefore = accountsBeforeConnection.some(acc => acc.provider === provider);
-        
-        console.log(`🔄 OAuth: Starting polling for ${provider}`, {
-          accountsBefore: accountsBeforeConnection.length,
-          hadProviderBefore,
-        });
-        
-        const pollInterval = setInterval(async () => {
-          pollCount++;
-          console.log(`🔄 OAuth polling: Attempt ${pollCount}/${maxPolls} for ${provider}`);
-          
-          try {
-            // Get fresh accounts directly from API (don't rely on state)
-            const response = await apiClient.get<SocialAccount[]>('/v1/oauth/accounts');
-            if (response.ok && Array.isArray(response.data)) {
-              const currentAccounts = response.data;
-              const accountsAfter = currentAccounts.length;
-              const hasProviderAccount = currentAccounts.some(acc => acc.provider === provider);
-              
-              console.log(`🔄 OAuth polling: ${provider}`, {
-                accountsBefore: accountsBeforeConnection.length,
-                accountsAfter,
-                hadProviderBefore,
-                hasProviderAccount,
-                pollCount,
-              });
-              
-              // Update state so UI reflects the change
-              setAccounts(currentAccounts);
-              
-              // If provider account was added (didn't exist before, exists now), connection successful
-              if (hasProviderAccount && !hadProviderBefore) {
-                clearInterval(pollInterval);
-                console.log(`✅ OAuth polling: ${provider} connection detected!`);
-                Toast.show({
-                  type: 'success',
-                  text1: 'Connected',
-                  text2: `${PROVIDER_INFO[provider]?.name || provider} account connected successfully`,
-                });
-                return;
-              }
-            }
-          } catch (error) {
-            console.error('Error polling for accounts:', error);
-          }
-          
-          // Stop polling after max attempts
-          if (pollCount >= maxPolls) {
-            clearInterval(pollInterval);
-            console.log(`⏱️ OAuth polling: Max attempts reached for ${provider}`);
-            // Final check
-            try {
-              const finalResponse = await apiClient.get<SocialAccount[]>('/v1/oauth/accounts');
-              if (finalResponse.ok && Array.isArray(finalResponse.data)) {
-                const finalHasAccount = finalResponse.data.some(acc => acc.provider === provider);
-                setAccounts(finalResponse.data); // Update state
-                if (finalHasAccount) {
-                  Toast.show({
-                    type: 'success',
-                    text1: 'Connected',
-                    text2: `${PROVIDER_INFO[provider]?.name || provider} account connected`,
-                  });
-                } else {
-                  Toast.show({
-                    type: 'info',
-                    text1: 'Check Connection',
-                    text2: 'Please check if the connection was successful in settings',
-                  });
-                }
-              }
-            } catch (error) {
-              console.error('Error in final account check:', error);
-            }
-          }
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Connect account error:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: `Failed to connect ${provider}`,
-      });
-    } finally {
-      setIsConnecting((prev) => ({ ...prev, [provider]: false }));
-    }
-  };
-
-  const disconnectAccount = async (provider: string) => {
-    try {
-      const response = await apiClient.delete(`/v1/oauth/${provider}`);
-      if (response.ok) {
-        Toast.show({
-          type: 'success',
-          text1: 'Disconnected',
-          text2: `${PROVIDER_INFO[provider]?.name || provider} account disconnected`,
-        });
-        loadAccounts();
-      } else {
-        Toast.show({
-          type: 'error',
-          text1: 'Error',
-          text2: 'Failed to disconnect account',
-        });
-      }
-    } catch (error) {
-      console.error('Disconnect error:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'An error occurred',
-      });
-    }
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await Promise.all([loadAccounts(), refreshUser()]);
-    setRefreshing(false);
-  }, [loadAccounts, refreshUser]);
-
-  const accountsMap = accounts.reduce<Record<string, SocialAccount>>((acc, account) => {
-    acc[account.provider] = account;
-    return acc;
-  }, {});
-
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Never';
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString();
-    } catch {
-      return 'Unknown';
-    }
-  };
 
   const handleUpdateNotificationPreference = (
     channel: 'email' | 'in_app',
@@ -636,14 +329,6 @@ export default function SettingsScreen() {
       {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'social' && styles.tabActive]}
-          onPress={() => setActiveTab('social')}
-        >
-          <Text style={[styles.tabText, activeTab === 'social' && styles.tabTextActive]}>
-            Social
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           style={[styles.tab, activeTab === 'notifications' && styles.tabActive]}
           onPress={() => setActiveTab('notifications')}
         >
@@ -676,104 +361,7 @@ export default function SettingsScreen() {
         <ScrollView 
           style={styles.scrollView} 
           showsVerticalScrollIndicator={false}
-          refreshControl={activeTab === 'social' ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} /> : undefined}
         >
-          {activeTab === 'social' && (
-            <View style={styles.tabContent}>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Connected Accounts</Text>
-                <Text style={styles.sectionSubtext}>
-                  Connect your social media accounts to sync posts and track engagement
-                </Text>
-
-                {isLoading && accounts.length === 0 ? (
-                  <View style={styles.centerContainer}>
-                    <ActivityIndicator size="large" color="#FF6B00" />
-                    <Text style={styles.loadingText}>Loading accounts...</Text>
-                  </View>
-                ) : (
-                  <>
-                    {['facebook', 'instagram', 'tiktok', 'youtube'].map((provider) => {
-                      const account = accountsMap[provider];
-                      const info = PROVIDER_INFO[provider];
-                      const isConnectingProvider = isConnecting[provider];
-
-                      return (
-                        <View key={provider} style={styles.accountCard}>
-                          <View style={styles.accountHeader}>
-                            <View style={styles.accountInfo}>
-                              <View style={[styles.accountIconContainer, { backgroundColor: `${info.color}20` }]}>
-                                <FontAwesome
-                                  name={info.icon}
-                                  size={24}
-                                  color={info.color}
-                                />
-                              </View>
-                              <View>
-                                <Text style={styles.accountName}>{info.name}</Text>
-                                {account ? (
-                                  <Text style={styles.accountStatus}>
-                                    Connected as @{account.provider_username || 'user'}
-                                  </Text>
-                                ) : (
-                                  <Text style={styles.accountStatus}>Not connected</Text>
-                                )}
-                              </View>
-                            </View>
-                            {account && (
-                              <View style={styles.connectedBadge}>
-                                <FontAwesome name="check" size={14} color="#fff" />
-                              </View>
-                            )}
-                          </View>
-
-                          {account && (
-                            <View style={styles.accountDetails}>
-                              <Text style={styles.detailText}>
-                                Connected: {formatDate(account.connected_at)}
-                              </Text>
-                              {account.last_synced_at && (
-                                <Text style={styles.detailText}>
-                                  Last synced: {formatDate(account.last_synced_at)}
-                                </Text>
-                              )}
-                            </View>
-                          )}
-
-                          <View style={styles.accountActions}>
-                            {account ? (
-                              <TouchableOpacity
-                                style={styles.disconnectButton}
-                                onPress={() => disconnectAccount(provider)}
-                              >
-                                <Text style={styles.disconnectButtonText}>Disconnect</Text>
-                              </TouchableOpacity>
-                            ) : (
-                              <TouchableOpacity
-                                style={[
-                                  styles.connectButton,
-                                  isConnectingProvider && styles.buttonDisabled,
-                                ]}
-                                onPress={() => connectAccount(provider)}
-                                disabled={isConnectingProvider}
-                              >
-                                {isConnectingProvider ? (
-                                  <ActivityIndicator size="small" color="#fff" />
-                                ) : (
-                                  <Text style={styles.connectButtonText}>Connect</Text>
-                                )}
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </>
-                )}
-              </View>
-            </View>
-          )}
-
           {activeTab === 'notifications' && (
             <View style={styles.tabContent}>
               <View style={styles.section}>

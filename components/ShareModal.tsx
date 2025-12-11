@@ -115,25 +115,12 @@ export function ShareModal({
     let shareUrl = '';
 
     switch (platform) {
-      case 'facebook':
-        shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
-        break;
       case 'twitter':
         shareUrl = `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedText}`;
         break;
       case 'whatsapp':
         shareUrl = `https://wa.me/?text=${encodedText}%20${encodedUrl}`;
         break;
-      case 'instagram':
-        // Instagram doesn't support direct URL sharing, so copy to clipboard
-        Clipboard.setString(defaultPostUrl);
-        Toast.show({
-          type: 'success',
-          text1: 'Link Copied',
-          text2: 'Post link copied! Paste it in your Instagram story or post.',
-          visibilityTime: 3000,
-        });
-        return;
       default:
         return;
     }
@@ -262,13 +249,6 @@ export function ShareModal({
               <View style={styles.platformGrid}>
                 <TouchableOpacity
                   style={styles.platformButton}
-                  onPress={() => handleExternalShare('facebook')}
-                >
-                  <FontAwesome name="facebook" size={24} color="#1877F2" />
-                  <Text style={styles.platformText}>Facebook</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.platformButton}
                   onPress={() => handleExternalShare('twitter')}
                 >
                   <FontAwesome name="twitter" size={24} color="#1DA1F2" />
@@ -280,13 +260,6 @@ export function ShareModal({
                 >
                   <FontAwesome name="whatsapp" size={24} color="#25D366" />
                   <Text style={styles.platformText}>WhatsApp</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.platformButton}
-                  onPress={() => handleExternalShare('instagram')}
-                >
-                  <FontAwesome name="instagram" size={24} color="#E4405F" />
-                  <Text style={styles.platformText}>Instagram</Text>
                 </TouchableOpacity>
               </View>
             </View>

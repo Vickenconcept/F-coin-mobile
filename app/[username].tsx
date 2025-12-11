@@ -1281,15 +1281,7 @@ export default function UserProfileScreen() {
                   // Detect platform from URL
                   const getPlatformIcon = (url: string): { name: keyof typeof FontAwesome.glyphMap; color: string } => {
                     const lowerUrl = url.toLowerCase();
-                    if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.com')) {
-                      return { name: 'facebook', color: '#1877F2' };
-                    } else if (lowerUrl.includes('instagram.com') || lowerUrl.includes('ig.com')) {
-                      return { name: 'instagram', color: '#E4405F' };
-                    } else if (lowerUrl.includes('tiktok.com')) {
-                      return { name: 'music', color: '#000000' };
-                    } else if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
-                      return { name: 'youtube', color: '#FF0000' };
-                    } else if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) {
+                    if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) {
                       return { name: 'twitter', color: '#1DA1F2' };
                     } else if (lowerUrl.includes('linkedin.com')) {
                       return { name: 'linkedin', color: '#0077B5' };
